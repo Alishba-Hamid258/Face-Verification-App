@@ -1,4 +1,6 @@
-from fastapi import FastAPI, UploadFile, File, Form, HTTPException
+from fastapi import FastAPI, UploadFile, File, Form, HTTPException, Depends
+from fastapi.security import HTTPBasic, HTTPBasicCredentials
+import secrets
 import face_recognition
 import numpy as np
 import pickle
@@ -12,6 +14,32 @@ import cv2
 from config import MONGODB_URI, MONGODB_DB_NAME, MONGODB_COLLECTION, CACHE_DURATION
 
 app = FastAPI()
+
+security = HTTPBasic()
+
+def verify_credentials(credentials: HTTPBasicCredentials = Depends(security)):
+    correct_username = secrets.compare_digest(credentials.username, "admin")
+    correct_password = secrets.compare_digest(credentials.password, "secret123")
+    if not (correct_username and correct_password):
+        raise HTTPException(
+            status_code=401,
+            detail="Incorrect username or password",
+            headers={"WWW-Authenticate": "Basic"},
+        )
+    return credentials.username
+
+def resize_with_aspect_ratio(image, width=None, height=None, inter=cv2.INTER_AREA):
+    dim = None
+    (h, w) = image.shape[:2]
+    if width is None and height is None:
+        return image
+    if width is None:
+        r = height / float(h)
+        dim = (int(w * r), height)
+    else:
+        r = width / float(w)
+        dim = (width, int(h * r))
+    return cv2.resize(image, dim, interpolation=inter)
 
 # MongoDB client (initialized on startup)
 client = None
@@ -56,11 +84,12 @@ def load_embeddings():
     return cached_encodings, cached_names
 
 @app.post("/add-politician")
-async def add_politician(
+def add_politician(
     name: str = Form(...),
     description: str = Form(...),
     party: str = Form(...),
     images: List[UploadFile] = File(...),
+    username: str = Depends(verify_credentials)
 ):
     if not images:
         raise HTTPException(status_code=400, detail="At least one image is required.")
@@ -68,10 +97,10 @@ async def add_politician(
     encodings = []
     image_sources = []
     for image in images:
-        contents = await image.read()
+        contents = image.file.read()
         pil_image = Image.open(io.BytesIO(contents)).convert('RGB')
         rgb_image = np.array(pil_image)
-        rgb_image = cv2.resize(rgb_image, (160, 120))
+        rgb_image = resize_with_aspect_ratio(rgb_image, width=320)
         face_locations = face_recognition.face_locations(rgb_image, model="hog")
         if not face_locations:
             face_locations = face_recognition.face_locations(rgb_image, model="cnn")
@@ -100,21 +129,22 @@ async def add_politician(
     return {"status": "success", "message": f"Added {name} with {len(encodings)} images."}
 
 @app.post("/edit-politician")
-async def edit_politician(
+def edit_politician(
     old_name: str = Form(...),
     new_name: str = Form(...),
     new_description: str = Form(...),
     new_party: str = Form(...),
     images: List[UploadFile] = File(None),
+    username: str = Depends(verify_credentials)
 ):
     if images:
         encodings = []
         image_sources = []
         for image in images:
-            contents = await image.read()
+            contents = image.file.read()
             pil_image = Image.open(io.BytesIO(contents)).convert('RGB')
             rgb_image = np.array(pil_image)
-            rgb_image = cv2.resize(rgb_image, (160, 120))
+            rgb_image = resize_with_aspect_ratio(rgb_image, width=320)
             face_locations = face_recognition.face_locations(rgb_image, model="hog")
             if not face_locations:
                 face_locations = face_recognition.face_locations(rgb_image, model="cnn")
@@ -152,13 +182,13 @@ async def edit_politician(
     return {"status": "success", "message": f"Edited {old_name} to {new_name}."}
 
 @app.post("/verify-image")
-async def verify_image(file: UploadFile = File(...)):
+def verify_image(file: UploadFile = File(...)):
     start_time = time.time()
     try:
-        contents = await file.read()
+        contents = file.file.read()
         pil_image = Image.open(io.BytesIO(contents)).convert('RGB')
         rgb_image = np.array(pil_image)
-        rgb_image = cv2.resize(rgb_image, (160, 120))
+        rgb_image = resize_with_aspect_ratio(rgb_image, width=320)
         print(f"Resized image shape: {rgb_image.shape}")
 
         known_encodings, known_names = load_embeddings()
@@ -203,7 +233,7 @@ async def get_politicians():
     return {"politicians": known_names}
 
 @app.post("/delete-politician")
-async def delete_politician(name: str = Form(...)):
+def delete_politician(name: str = Form(...), username: str = Depends(verify_credentials)):
     result = collection.delete_one({'name': name})
     if result.deleted_count == 0:
         raise HTTPException(status_code=404, detail="Politician not found.")

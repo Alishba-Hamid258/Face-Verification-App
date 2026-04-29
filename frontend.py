@@ -34,112 +34,176 @@ if uploaded_file is not None:
     except Exception as e:
         st.error(f"Error processing image: {e}")
 
-st.subheader("Add a New Person via GUI")
-with st.form(key="add_person_form"):
-    new_name = st.text_input("Name")
-    new_description = st.text_input("Description")
-    new_party = st.text_input("Party")
-    new_images = st.file_uploader("Upload Images for New Person", type=["jpg", "png"], accept_multiple_files=True)
-    submit_button = st.form_submit_button(label="Add Person")
+# --- Admin Login Sidebar ---
+st.sidebar.title("Admin Login")
+if "admin_logged_in" not in st.session_state:
+    st.session_state.admin_logged_in = False
+    st.session_state.admin_username = ""
+    st.session_state.admin_password = ""
 
-    if submit_button and new_images and new_name and new_description and new_party:
-        try:
-            files = [("images", image) for image in new_images]
-            data = {"name": new_name, "description": new_description, "party": new_party}
-            response = requests.post(f"{API_URL}/add-politician", data=data, files=files, timeout=10)
-            if response.status_code == 200:
-                st.success(response.json()["message"])
+if not st.session_state.admin_logged_in:
+    with st.sidebar.form("login_form"):
+        username = st.text_input("Username")
+        password = st.text_input("Password", type="password")
+        login_submitted = st.form_submit_button("Login")
+        if login_submitted:
+            st.session_state.admin_username = username
+            st.session_state.admin_password = password
+            st.session_state.admin_logged_in = True
+            st.rerun()
+else:
+    st.sidebar.success(f"Logged in as {st.session_state.admin_username}")
+    if st.sidebar.button("Logout"):
+        st.session_state.admin_logged_in = False
+        st.session_state.admin_username = ""
+        st.session_state.admin_password = ""
+        st.rerun()
+
+# --- Admin Controls ---
+if st.session_state.admin_logged_in:
+    st.subheader("Add a New Person")
+    with st.form(key="add_person_form"):
+        new_name = st.text_input("Name")
+        new_description = st.text_input("Description")
+        new_party = st.text_input("Party")
+        new_images = st.file_uploader("Upload Images for New Person", type=["jpg", "png"], accept_multiple_files=True)
+        submit_button = st.form_submit_button(label="Add Person")
+
+        if submit_button and new_images and new_name and new_description and new_party:
+            try:
+                files = [("images", image) for image in new_images]
+                data = {"name": new_name, "description": new_description, "party": new_party}
+                response = requests.post(f"{API_URL}/add-politician", data=data, files=files, auth=(st.session_state.admin_username, st.session_state.admin_password), timeout=10)
+                if response.status_code == 200:
+                    st.success(response.json()["message"])
+                else:
+                    st.error(response.json().get("detail", "Authentication Failed"))
+            except Exception as e:
+                st.error(f"Error adding person: {e}")
+
+    st.subheader("Edit an Existing Person")
+    with st.form(key="edit_person_form"):
+        old_name = st.selectbox("Select Person to Edit", known_names)
+        new_name = st.text_input("New Name", value=old_name if old_name else "")
+        new_description = st.text_input("New Description")
+        new_party = st.text_input("New Party")
+        new_images = st.file_uploader("Upload New Images (Optional)", type=["jpg", "png"], accept_multiple_files=True)
+        submit_edit = st.form_submit_button(label="Edit Person")
+
+        if submit_edit and old_name:
+            try:
+                files = [("images", image) for image in new_images] if new_images else []
+                data = {
+                    "old_name": old_name,
+                    "new_name": new_name,
+                    "new_description": new_description,
+                    "new_party": new_party,
+                }
+                response = requests.post(f"{API_URL}/edit-politician", data=data, files=files, auth=(st.session_state.admin_username, st.session_state.admin_password), timeout=10)
+                if response.status_code == 200:
+                    st.success(response.json()["message"])
+                else:
+                    st.error(response.json().get("detail", "Authentication Failed"))
+            except Exception as e:
+                st.error(f"Error editing person: {e}")
+
+    st.subheader("Delete a Person")
+    with st.form(key="delete_person_form"):
+        delete_name = st.selectbox("Select Person to Delete", known_names)
+        submit_delete = st.form_submit_button(label="Delete Person")
+
+        if submit_delete and delete_name:
+            try:
+                data = {"name": delete_name}
+                response = requests.post(f"{API_URL}/delete-politician", data=data, auth=(st.session_state.admin_username, st.session_state.admin_password), timeout=10)
+                if response.status_code == 200:
+                    st.success(response.json()["message"])
+                    response = requests.get(f"{API_URL}/politicians", timeout=10)
+                    st.session_state.known_names = response.json()["politicians"]
+                else:
+                    st.error(response.json().get("detail", "Authentication Failed"))
+            except Exception as e:
+                st.error(f"Error deleting person: {e}")
+else:
+    st.info("🔒 Please log in via the sidebar to Add, Edit, or Delete people in the database.")
+
+@st.cache_resource
+def get_camera_manager():
+    class CameraManager:
+        def __init__(self):
+            self.cap = None
+            self.thread = None
+            self.run_flag = [False]
+            self.frame_queue = queue.Queue()
+
+        def capture_frames(self):
+            while self.run_flag[0] and self.cap and self.cap.isOpened():
+                ret, frame = self.cap.read()
+                if not ret:
+                    time.sleep(0.1)
+                    continue
+                self.frame_queue.put(frame)
+                time.sleep(0.1)
+
+        def start(self):
+            if self.cap and self.cap.isOpened():
+                return True
+            for idx in range(3):
+                self.cap = cv2.VideoCapture(idx, cv2.CAP_DSHOW)
+                if self.cap.isOpened():
+                    break
             else:
-                st.error(response.json()["detail"])
-        except Exception as e:
-            st.error(f"Error adding person: {e}")
+                return False
+            
+            self.cap.set(cv2.CAP_PROP_FRAME_WIDTH, 320)
+            self.cap.set(cv2.CAP_PROP_FRAME_HEIGHT, 240)
+            self.run_flag[0] = True
+            self.thread = threading.Thread(target=self.capture_frames, daemon=True)
+            self.thread.start()
+            return True
 
-st.subheader("Edit an Existing Person via GUI")
-with st.form(key="edit_person_form"):
-    old_name = st.selectbox("Select Person to Edit", known_names)
-    new_name = st.text_input("New Name", value=old_name if old_name else "")
-    new_description = st.text_input("New Description")
-    new_party = st.text_input("New Party")
-    new_images = st.file_uploader("Upload New Images (Optional)", type=["jpg", "png"], accept_multiple_files=True)
-    submit_edit = st.form_submit_button(label="Edit Person")
+        def stop(self):
+            self.run_flag[0] = False
+            if self.cap and self.cap.isOpened():
+                self.cap.release()
+            if self.thread:
+                self.thread.join(timeout=1.0)
+            self.cap = None
+            self.thread = None
+            while not self.frame_queue.empty():
+                self.frame_queue.get()
 
-    if submit_edit and old_name:
-        try:
-            files = [("images", image) for image in new_images] if new_images else []
-            data = {
-                "old_name": old_name,
-                "new_name": new_name,
-                "new_description": new_description,
-                "new_party": new_party,
-            }
-            response = requests.post(f"{API_URL}/edit-politician", data=data, files=files, timeout=10)
-            if response.status_code == 200:
-                st.success(response.json()["message"])
-            else:
-                st.error(response.json()["detail"])
-        except Exception as e:
-            st.error(f"Error editing person: {e}")
+    return CameraManager()
 
-st.subheader("Delete a Person via GUI")
-with st.form(key="delete_person_form"):
-    delete_name = st.selectbox("Select Person to Delete", known_names)
-    submit_delete = st.form_submit_button(label="Delete Person")
+cam_manager = get_camera_manager()
 
-    if submit_delete and delete_name:
-        try:
-            data = {"name": delete_name}
-            response = requests.post(f"{API_URL}/delete-politician", data=data, timeout=10)
-            if response.status_code == 200:
-                st.success(response.json()["message"])
-                response = requests.get(f"{API_URL}/politicians", timeout=10)
-                st.session_state.known_names = response.json()["politicians"]
-            else:
-                st.error(response.json()["detail"])
-        except Exception as e:
-            st.error(f"Error deleting person: {e}")
+if "camera_running" not in st.session_state:
+    st.session_state.camera_running = False
 
-cap = None
-camera_running = False
-frame_queue = queue.Queue()
-capture_thread = None
+st.subheader("Camera Controls")
+
+if not st.session_state.camera_running:
+    if st.button("Start Camera"):
+        if cam_manager.start():
+            st.session_state.camera_running = True
+            st.rerun()
+        else:
+            st.error("Could not open camera. Check if another app is using it or enable camera permissions in Windows.")
+else:
+    if st.button("Stop Camera"):
+        st.session_state.camera_running = False
+        cam_manager.stop()
+        st.success("Camera stopped.")
+        st.rerun()
+
 frame_placeholder = st.empty()
 match_placeholder = st.empty()
 
-def capture_frames():
-    global cap, camera_running
-    while camera_running and cap and cap.isOpened():
-        ret, frame = cap.read()
-        if not ret:
-            time.sleep(0.1)
-            continue
-        frame_queue.put(frame)
-        time.sleep(0.2)
-
-def start_camera():
-    global cap, camera_running, capture_thread
-    if camera_running:
-        return
-
-    for idx in range(3):
-        cap = cv2.VideoCapture(idx, cv2.CAP_DSHOW)
-        if cap.isOpened():
-            st.success(f"Camera opened successfully at index {idx}")
-            break
-    else:
-        st.error("Could not open camera. Check if another app is using it or enable camera permissions in Windows.")
-        return
-
-    cap.set(cv2.CAP_PROP_FRAME_WIDTH, 320)
-    cap.set(cv2.CAP_PROP_FRAME_HEIGHT, 240)
-    camera_running = True
-
-    capture_thread = threading.Thread(target=capture_frames, daemon=True)
-    capture_thread.start()
-
+if st.session_state.camera_running:
     frame_count = 0
-    while camera_running:
-        if not frame_queue.empty():
-            frame = frame_queue.get()
+    while st.session_state.camera_running:
+        if not cam_manager.frame_queue.empty():
+            frame = cam_manager.frame_queue.get()
             frame_rgb = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
             frame_placeholder.image(frame_rgb, channels="RGB", use_container_width=True)
 
@@ -151,30 +215,11 @@ def start_camera():
                     response = requests.post(f"{API_URL}/verify-image", files=files, timeout=15)
                     result = response.json()
                     if result["matched"]:
-                        match_placeholder.text(f"Matched: {result['name']} (Distance: {result['distance']:.2f})")
-                        st.write(f"Description: {result['description']}")
-                        st.write(f"Party: {result['party']}")
+                        match_placeholder.success(f"**Matched:** {result['name']} (Distance: {result['distance']:.2f})\n\n**Party:** {result['party']}\n\n**Description:** {result['description']}")
                     else:
-                        match_placeholder.text("No match found.")
+                        match_placeholder.warning("No match found.")
                 except requests.exceptions.ReadTimeout:
-                    match_placeholder.text("Server timed out. Please wait or check server status.")
+                    match_placeholder.error("Server timed out. Please wait or check server status.")
                 except Exception as e:
-                    match_placeholder.text(f"Error sending frame: {e}")
+                    match_placeholder.error(f"Error sending frame: {e}")
         time.sleep(0.01)
-
-def stop_camera():
-    global camera_running, cap, capture_thread
-    camera_running = False
-    if cap is not None and cap.isOpened():
-        cap.release()
-    if capture_thread is not None:
-        capture_thread.join(timeout=1.0)
-    st.success("Camera stopped.")
-
-st.subheader("Camera Controls")
-if st.button("Start Camera"):
-    start_camera()
-
-if camera_running:
-    if st.button("Stop Camera"):
-        stop_camera()
