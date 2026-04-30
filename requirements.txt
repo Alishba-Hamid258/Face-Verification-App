@@ -4,5 +4,5 @@ pymongo
 face_recognition
 numpy
 Pillow
-opencv-python-headless
+opencv-python-headless==4.8.1.78
 python-dotenv
