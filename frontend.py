@@ -1,5 +1,4 @@
 import streamlit as st
-import cv2
 import numpy as np
 import time
 import pickle
@@ -46,18 +45,22 @@ def load_embeddings():
     return cached_encodings, cached_names
 
 # --- Helper Functions ---
-def resize_with_aspect_ratio(image, width=None, height=None, inter=cv2.INTER_AREA):
-    dim = None
-    (h, w) = image.shape[:2]
+def resize_with_aspect_ratio(image, width=None, height=None):
     if width is None and height is None:
         return image
+    
+    pil_image = Image.fromarray(image)
+    w, h = pil_image.size
+    
     if width is None:
         r = height / float(h)
         dim = (int(w * r), height)
     else:
         r = width / float(w)
         dim = (width, int(h * r))
-    return cv2.resize(image, dim, interpolation=inter)
+        
+    resized_pil = pil_image.resize(dim, Image.Resampling.LANCZOS)
+    return np.array(resized_pil)
 
 def process_uploaded_image(uploaded_file):
     contents = uploaded_file.read()
@@ -264,24 +267,30 @@ class FaceProcessor:
         self.last_result = None
 
     def recv(self, frame: av.VideoFrame) -> av.VideoFrame:
-        img = frame.to_ndarray(format="bgr24")
+        img = frame.to_ndarray(format="rgb24")
         self.frame_count += 1
         
         # Process every 15 frames to avoid lagging
         if self.frame_count % 15 == 0:
-            rgb_image = cv2.cvtColor(img, cv2.COLOR_BGR2RGB)
-            self.last_result = verify_face_in_image(rgb_image)
+            self.last_result = verify_face_in_image(img)
             
-        if self.last_result and self.last_result.get("matched"):
-            name = self.last_result["name"]
-            distance = self.last_result["distance"]
-            party = self.last_result.get("party", "")
-            cv2.putText(img, f"Match: {name} ({distance:.2f})", (10, 30), cv2.FONT_HERSHEY_SIMPLEX, 0.7, (0, 255, 0), 2)
-            cv2.putText(img, f"Party: {party}", (10, 60), cv2.FONT_HERSHEY_SIMPLEX, 0.7, (0, 255, 0), 2)
-        elif self.last_result and not self.last_result.get("error"):
-            cv2.putText(img, "No Match", (10, 30), cv2.FONT_HERSHEY_SIMPLEX, 0.7, (0, 0, 255), 2)
+        if self.last_result:
+            from PIL import ImageDraw
+            pil_img = Image.fromarray(img)
+            draw = ImageDraw.Draw(pil_img)
             
-        return av.VideoFrame.from_ndarray(img, format="bgr24")
+            if self.last_result.get("matched"):
+                name = self.last_result["name"]
+                distance = self.last_result["distance"]
+                party = self.last_result.get("party", "")
+                draw.text((10, 30), f"Match: {name} ({distance:.2f})", fill=(0, 255, 0))
+                draw.text((10, 60), f"Party: {party}", fill=(0, 255, 0))
+            elif not self.last_result.get("error"):
+                draw.text((10, 30), "No Match", fill=(255, 0, 0))
+                
+            img = np.array(pil_img)
+            
+        return av.VideoFrame.from_ndarray(img, format="rgb24")
 
 webrtc_streamer(
     key="face-verification",
