@@ -1,6 +1,6 @@
 streamlit
 streamlit-webrtc
-pymongo
+pymongo[srv]==4.8.0
 face_recognition
 numpy
 Pillow
