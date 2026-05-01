@@ -25,46 +25,33 @@ import importlib
 
 # 3. Check and install missing packages dynamically
 def install_fallback_dependencies():
-    importlib.invalidate_caches()
     packages_to_install = []
     
-    # Helper to check if a package is truly missing
-    def is_missing(name):
-        try:
-            importlib.import_module(name)
-            return False
-        except ImportError:
-            return True
-
-    if is_missing("pymongo"):
+    # Check for folders in /tmp/deps to see if they are already installed
+    if not os.path.exists(os.path.join(deps_dir, "pymongo")):
         packages_to_install.extend(["pymongo==4.7.3", "dnspython==2.6.1"])
 
-    if is_missing("dlib"):
+    if not os.path.exists(os.path.join(deps_dir, "dlib.so")) and not os.path.exists(os.path.join(deps_dir, "dlib")):
         packages_to_install.append("dlib-bin==19.24.6")
 
-    if is_missing("face_recognition_models"):
+    if not os.path.exists(os.path.join(deps_dir, "face_recognition_models")):
         packages_to_install.append("face_recognition_models>=0.3.0")
         
-    if is_missing("click"):
+    if not os.path.exists(os.path.join(deps_dir, "click")):
         packages_to_install.append("Click>=6.0")
 
+    if not os.path.exists(os.path.join(deps_dir, "face_recognition")):
+        packages_to_install.append("face_recognition")
+
     if packages_to_install:
-        st.warning(f"Setting up environment: {', '.join(packages_to_install)}... (This happens only once)")
+        st.warning(f"Setting up environment... (This happens only once)")
         try:
-            # Added --upgrade to fix potential corrupted partial installs
-            subprocess.check_call([sys.executable, "-m", "pip", "install", "-q", "--progress-bar", "off", "--upgrade", "-t", deps_dir] + packages_to_install)
+            # Install EVERYTHING in one go
+            subprocess.check_call([sys.executable, "-m", "pip", "install", "-q", "--progress-bar", "off", "-t", deps_dir] + packages_to_install)
             importlib.invalidate_caches()
+            st.rerun() # Force a rerun to pick up the new packages
         except Exception as e:
             st.error(f"Setup failed: {e}")
-            st.stop()
-
-    if is_missing("face_recognition"):
-        st.warning("Finalizing face verification engine...")
-        try:
-            subprocess.check_call([sys.executable, "-m", "pip", "install", "-q", "--progress-bar", "off", "-t", deps_dir, "--no-deps", "face_recognition"])
-            importlib.invalidate_caches()
-        except Exception as e:
-            st.error(f"Engine setup failed: {e}")
             st.stop()
 
 install_fallback_dependencies()
@@ -74,7 +61,7 @@ try:
     from pymongo import MongoClient
     import face_recognition
 except Exception as e:
-    st.error(f"Final startup check failed: {e}. Please try clicking 'Reboot App' in the sidebar menu.")
+    st.error(f"Startup check failed: {e}. Please click 'Reboot App' in the sidebar.")
     st.stop()
 
 import numpy as np
