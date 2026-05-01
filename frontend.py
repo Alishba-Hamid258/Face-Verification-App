@@ -24,7 +24,11 @@ except ImportError:
         sys.path.insert(0, deps_dir)
         
     from pymongo import MongoClient
-import face_recognition
+try:
+    import face_recognition
+except Exception as e:
+    st.error(f"Critical error loading face_recognition: {e}")
+    st.stop()
 from streamlit_webrtc import webrtc_streamer, WebRtcMode, RTCConfiguration
 import av
 
