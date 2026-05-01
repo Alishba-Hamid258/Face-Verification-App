@@ -48,7 +48,7 @@ def install_fallback_dependencies():
     if packages_to_install:
         st.warning(f"Installing missing core dependencies: {', '.join(packages_to_install)}. Please wait...")
         try:
-            subprocess.check_call([sys.executable, "-m", "pip", "install", "-t", deps_dir] + packages_to_install)
+            subprocess.check_call([sys.executable, "-m", "pip", "install", "-q", "--progress-bar", "off", "-t", deps_dir] + packages_to_install)
         except Exception as e:
             st.error(f"Failed to install dependencies: {e}")
             st.stop()
@@ -58,7 +58,7 @@ def install_fallback_dependencies():
     except ImportError:
         st.warning("Installing face_recognition wrapper...")
         try:
-            subprocess.check_call([sys.executable, "-m", "pip", "install", "-t", deps_dir, "--no-deps", "face_recognition"])
+            subprocess.check_call([sys.executable, "-m", "pip", "install", "-q", "--progress-bar", "off", "-t", deps_dir, "--no-deps", "face_recognition"])
         except Exception as e:
             st.error(f"Failed to install face_recognition: {e}")
             st.stop()
