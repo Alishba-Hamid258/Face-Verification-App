@@ -5,7 +5,13 @@ import pickle
 from datetime import datetime
 import io
 from PIL import Image
-from pymongo import MongoClient
+try:
+    from pymongo import MongoClient
+except ImportError:
+    import sys
+    import subprocess
+    subprocess.check_call([sys.executable, "-m", "pip", "install", "pymongo==4.7.3", "dnspython==2.6.1"])
+    from pymongo import MongoClient
 import face_recognition
 from streamlit_webrtc import webrtc_streamer, WebRtcMode, RTCConfiguration
 import av
