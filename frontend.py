@@ -2,73 +2,84 @@ import streamlit as st
 import os
 import sys
 import subprocess
-import time
-import pickle
-import numpy as np
-from datetime import datetime
-from PIL import Image
-import av
-from streamlit_webrtc import webrtc_streamer, WebRtcMode, RTCConfiguration
 import importlib
 
-# 1. Setup fallback path for missing wrappers
+# Ensure /tmp/deps is in path
 deps_dir = "/tmp/deps"
 os.makedirs(deps_dir, exist_ok=True)
 if deps_dir not in sys.path:
     sys.path.insert(0, deps_dir)
 
-st.write("🔍 System Check...")
+# 1. Instant UI feedback
+st.set_page_config(page_title="Face Verification", layout="wide")
+st.title("Face Verification System")
+status = st.empty()
+status.info("🔍 Initializing System...")
+print("[DEBUG] App started. Starting system check...")
 
-# 2. Silent non-blocking install of face_recognition
+# 2. Check for AI Engine
 try:
     import face_recognition
     import face_recognition_models
-    st.write("✅ AI Engine Loaded")
+    print("[DEBUG] AI Engine already loaded.")
 except ImportError:
-    st.write("📦 Installing AI components...")
-    with st.spinner("Downloading models (100MB)... Please stay on this page."):
-        try:
-            subprocess.check_call([
-                sys.executable, "-m", "pip", "install", "-q", "--progress-bar", "off", 
-                "-t", deps_dir, "--no-deps", 
-                "face_recognition", "face-recognition-models"
-            ])
-            importlib.invalidate_caches()
-            st.success("✅ Setup complete! Reloading...")
-            st.rerun()
-        except Exception as e:
-            st.error(f"Setup failed: {e}")
-            st.stop()
+    print("[DEBUG] AI Engine missing. Starting installation...")
+    status.warning("📦 Installing AI components... (This takes 60 seconds)")
+    try:
+        subprocess.check_call([
+            sys.executable, "-m", "pip", "install", "-q", "--progress-bar", "off", 
+            "-t", deps_dir, "--no-deps", 
+            "face_recognition", "face-recognition-models"
+        ])
+        importlib.invalidate_caches()
+        print("[DEBUG] Installation successful. Rebooting app...")
+        st.success("✅ Setup complete! Reloading...")
+        time.sleep(2)
+        st.rerun()
+    except Exception as e:
+        st.error(f"Setup failed: {e}")
+        print(f"[ERROR] Setup failed: {e}")
+        st.stop()
 
+# 3. Load other heavy libraries AFTER initialization
+status.info("🔗 Loading libraries...")
+import numpy as np
+import pickle
+import av
+from datetime import datetime
+from PIL import Image
+from streamlit_webrtc import webrtc_streamer, WebRtcMode, RTCConfiguration
 from config import MONGODB_URI, MONGODB_DB_NAME, MONGODB_COLLECTION, CACHE_DURATION
 
-st.write("🔗 Connecting to Database...")
+# 4. Database Connection
+status.info("🔗 Connecting to Database...")
+print("[DEBUG] Connecting to MongoDB...")
 
-# --- MongoDB Setup ---
 @st.cache_resource
 def get_database():
     try:
         from pymongo import MongoClient
         client = MongoClient(MONGODB_URI, serverSelectionTimeoutMS=5000)
-        # Force a connection check
         client.admin.command('ping')
         return client[MONGODB_DB_NAME]
     except Exception as e:
         st.error(f"Database connection failed: {e}")
-        st.info("Check your MongoDB Atlas IP whitelist. It must allow 0.0.0.0/0 for Streamlit Cloud.")
+        print(f"[ERROR] Database connection failed: {e}")
         return None
 
 db = get_database()
-if db is not None:
-    collection = db[MONGODB_COLLECTION]
-    st.write("✅ Database Connected")
-else:
+if db is None:
+    st.info("Check your MongoDB Atlas IP whitelist (0.0.0.0/0).")
     st.stop()
 
-# --- Face Verification Logic ---
+status.empty() # Clear the status message
+print("[DEBUG] System ready.")
+
+# --- Logic ---
 @st.cache_data(ttl=CACHE_DURATION)
 def load_embeddings():
     try:
+        collection = db[MONGODB_COLLECTION]
         data = list(collection.find({}, {"name": 1, "embedding": 1}))
         names = [d["name"] for d in data]
         embeddings = [pickle.loads(d["embedding"]) for d in data]
@@ -92,11 +103,8 @@ def verify_face(target_embedding, known_embeddings, tolerance=0.6):
         return min_distance_idx, distances[min_distance_idx]
     return None, distances[min_distance_idx]
 
-# --- UI Components ---
+# --- Main UI ---
 def main():
-    st.set_page_config(page_title="Face Verification", layout="wide")
-    st.title("Face Verification System")
-
     # Sidebar Admin Login
     with st.sidebar:
         st.header("Admin Access")
@@ -146,6 +154,7 @@ def main():
             st.info("Please login as admin to manage faces")
         else:
             st.subheader("Manage Known Faces")
+            collection = db[MONGODB_COLLECTION]
             
             # Add New Face
             with st.expander("Add New Face"):
