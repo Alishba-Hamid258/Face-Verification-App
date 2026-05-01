@@ -10,10 +10,19 @@ try:
 except ImportError:
     import sys
     import subprocess
+    import os
+    
+    deps_dir = "/tmp/deps"
+    os.makedirs(deps_dir, exist_ok=True)
+    
     try:
-        subprocess.check_call([sys.executable, "-m", "pip", "install", "--user", "pymongo==4.7.3", "dnspython==2.6.1"])
-    except subprocess.CalledProcessError as e:
-        print(f"Failed to install pymongo: {e}")
+        subprocess.check_call([sys.executable, "-m", "pip", "install", "-t", deps_dir, "pymongo==4.7.3", "dnspython==2.6.1"])
+    except Exception as e:
+        print(f"Fallback install failed: {e}")
+        
+    if deps_dir not in sys.path:
+        sys.path.insert(0, deps_dir)
+        
     from pymongo import MongoClient
 import face_recognition
 from streamlit_webrtc import webrtc_streamer, WebRtcMode, RTCConfiguration
