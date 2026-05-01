@@ -17,9 +17,24 @@ from pymongo import MongoClient
 
 try:
     import face_recognition
-except Exception as e:
-    st.error(f"Critical error loading face_recognition: {e}")
-    st.stop()
+except ImportError:
+    import sys
+    import subprocess
+    import os
+    
+    deps_dir = "/tmp/deps"
+    os.makedirs(deps_dir, exist_ok=True)
+    
+    try:
+        subprocess.check_call([sys.executable, "-m", "pip", "install", "-t", deps_dir, "face_recognition", "dlib"])
+    except Exception as e:
+        st.error(f"Critical error loading face_recognition: Fallback install failed: {e}")
+        st.stop()
+        
+    if deps_dir not in sys.path:
+        sys.path.insert(0, deps_dir)
+        
+    import face_recognition
 from streamlit_webrtc import webrtc_streamer, WebRtcMode, RTCConfiguration
 import av
 
