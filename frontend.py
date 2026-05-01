@@ -172,7 +172,7 @@ def main():
         else:
             st.subheader("Manage Known Faces")
             db = get_database()
-            if not db:
+            if db is None:
                 st.error("Database connection failed. Check MongoDB IP whitelist.")
                 st.stop()
             collection = db[MONGODB_COLLECTION]
