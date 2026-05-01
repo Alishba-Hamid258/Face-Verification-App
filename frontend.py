@@ -110,6 +110,24 @@ def verify_face(target_embedding, known_embeddings, tolerance=0.6):
         return min_distance_idx, distances[min_distance_idx]
     return None, distances[min_distance_idx]
 
+def process_identification(img, db_data, all_embeddings):
+    status_area = st.empty()
+    status_area.info("⏳ Analyzing face...")
+    
+    target_emb = get_face_embeddings(img)
+    if target_emb is not None:
+        idx, dist = verify_face(target_emb, all_embeddings)
+        status_area.empty()
+        if idx is not None:
+            person = db_data[idx]
+            st.success(f"✅ Verified: {person['name']} (Confidence: {1-dist:.2%})")
+            st.info(f"📍 **Party:** {person['party']}\n\n📝 **Details:** {person['description']}")
+        else:
+            st.error("❌ Personality not recognized in database")
+    else:
+        status_area.empty()
+        st.warning("📷 Could not detect a clear face. Please try again.")
+
 # --- Main UI ---
 def main():
     # Sidebar Admin Login
@@ -164,6 +182,7 @@ def main():
 
         rtc_config = RTCConfiguration({"iceServers": [{"urls": ["stun:stun.l.google.com:19302"]}]})
         
+        # 1. Camera Section
         webrtc_ctx = webrtc_streamer(
             key="verification",
             mode=WebRtcMode.SENDRECV,
@@ -172,32 +191,32 @@ def main():
             async_processing=True,
         )
 
-        if webrtc_ctx.video_receiver:
-            if st.button("🔍 Identify Personality"):
-                try:
-                    frame = webrtc_ctx.video_receiver.get_frame(timeout=3)
-                    if frame:
-                        img = frame.to_ndarray(format="rgb24")
-                        status_area = st.empty()
-                        status_area.info("⏳ Analyzing face...")
-                        
-                        target_emb = get_face_embeddings(img)
-                        if target_emb is not None:
-                            idx, dist = verify_face(target_emb, all_embeddings)
-                            status_area.empty()
-                            if idx is not None:
-                                person = db_data[idx]
-                                st.success(f"✅ Verified: {person['name']} (Confidence: {1-dist:.2%})")
-                                st.info(f"📍 **Party:** {person['party']}\n\n📝 **Details:** {person['description']}")
-                            else:
-                                st.error("❌ Personality not recognized in database")
-                        else:
-                            status_area.empty()
-                            st.warning("📷 Could not detect a clear face. Please try again.")
-                except Exception as e:
-                    st.error(f"📸 Camera error: {e}")
-        else:
-            st.info("💡 Click 'START' and wait for the camera to load, then click 'Identify Personality'.")
+        # 2. Identification Actions
+        st.divider()
+        col1, col2 = st.columns(2)
+        
+        with col1:
+            st.write("📷 **Camera Identification**")
+            if st.button("🔍 Identify from Camera"):
+                if webrtc_ctx.video_receiver:
+                    try:
+                        frame = webrtc_ctx.video_receiver.get_frame(timeout=3)
+                        if frame:
+                            img = frame.to_ndarray(format="rgb24")
+                            process_identification(img, db_data, all_embeddings)
+                    except Exception as e:
+                        st.error(f"📸 Camera error: {e}")
+                else:
+                    st.warning("⚠️ Camera not ready. Please click 'START' and wait for your face to appear.")
+
+        with col2:
+            st.write("📁 **Upload Identification**")
+            uploaded_test = st.file_uploader("Test a photo", type=['jpg', 'png', 'jpeg'], key="test_upload")
+            if uploaded_test:
+                from PIL import Image
+                import numpy as np
+                test_img = np.array(Image.open(uploaded_test).convert('RGB'))
+                process_identification(test_img, db_data, all_embeddings)
 
     with tab2:
         if not is_admin:
