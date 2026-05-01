@@ -17,12 +17,8 @@ st.title("Face Verification System")
 status = st.empty()
 print("[DEBUG] App started.")
 
-# 2. Check for AI Engine
-try:
-    import face_recognition
-    import face_recognition_models
-    print("[DEBUG] AI Engine found.")
-except ImportError:
+# 2. Check for AI Engine (Folder check is more reliable than import check here)
+if not os.path.exists(os.path.join(deps_dir, "face_recognition")):
     status.warning("📦 Installing AI components... (One-time setup, 60 seconds)")
     print("[DEBUG] AI Engine missing. Installing...")
     try:
@@ -32,12 +28,16 @@ except ImportError:
             "face_recognition", "face-recognition-models"
         ])
         importlib.invalidate_caches()
+        print("[DEBUG] Installation successful. Rebooting app...")
         st.success("✅ AI Engine installed! Reloading...")
         time.sleep(2)
         st.rerun()
     except Exception as e:
         st.error(f"Setup failed: {e}")
         st.stop()
+else:
+    print("[DEBUG] AI Engine found in storage.")
+
 
 # 3. Lazy Database Connection
 from config import MONGODB_URI, MONGODB_DB_NAME, MONGODB_COLLECTION, CACHE_DURATION
