@@ -3,6 +3,7 @@ streamlit-webrtc
 pymongo==4.7.3
 dnspython==2.6.1
 dlib-bin==19.24.6
+face_recognition
 numpy
 Pillow
 python-dotenv

@@ -1,43 +1,13 @@
 import streamlit as st
 import os
 import sys
-import subprocess
-import importlib
 import time
-
-# Ensure /tmp/deps is in path
-deps_dir = "/tmp/deps"
-os.makedirs(deps_dir, exist_ok=True)
-if deps_dir not in sys.path:
-    sys.path.insert(0, deps_dir)
 
 # 1. Instant UI feedback
 st.set_page_config(page_title="Face Verification", layout="wide")
 st.title("Face Verification System")
 status = st.empty()
 print("[DEBUG] App started.")
-
-# 2. Check for AI Engine (Folder check is more reliable than import check here)
-if not os.path.exists(os.path.join(deps_dir, "face_recognition")):
-    status.warning("📦 Installing AI components... (One-time setup, 60 seconds)")
-    print("[DEBUG] AI Engine missing. Installing...")
-    try:
-        subprocess.check_call([
-            sys.executable, "-m", "pip", "install", "-q", "--progress-bar", "off", 
-            "-t", deps_dir, "--no-deps", 
-            "face_recognition", "face-recognition-models"
-        ])
-        importlib.invalidate_caches()
-        print("[DEBUG] Installation successful. Rebooting app...")
-        st.success("✅ AI Engine installed! Reloading...")
-        time.sleep(2)
-        st.rerun()
-    except Exception as e:
-        st.error(f"Setup failed: {e}")
-        st.stop()
-else:
-    print("[DEBUG] AI Engine found in storage.")
-
 
 # 3. Lazy Database Connection
 from config import MONGODB_URI, MONGODB_DB_NAME, MONGODB_COLLECTION, CACHE_DURATION
