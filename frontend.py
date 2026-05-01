@@ -50,6 +50,7 @@ def get_database():
         client.admin.command('ping')
         return client[MONGODB_DB_NAME]
     except Exception as e:
+        st.error(f"⚠️ Connection Error: {e}")
         print(f"[ERROR] DB connection failed: {e}")
         return None
 
