@@ -8,47 +8,76 @@ from PIL import Image
 import sys
 import os
 import subprocess
+import streamlit as st
 
+# 1. Inject the Streamlit Cloud venv directly into sys.path
+venv_site_packages = "/home/adminuser/venv/lib/python3.11/site-packages"
+if os.path.exists(venv_site_packages) and venv_site_packages not in sys.path:
+    sys.path.insert(0, venv_site_packages)
+
+# 2. Setup dynamic fallback directory
 deps_dir = "/tmp/deps"
 os.makedirs(deps_dir, exist_ok=True)
 if deps_dir not in sys.path:
     sys.path.insert(0, deps_dir)
 
-packages_to_install = []
-try:
-    import pymongo
-except ImportError:
-    packages_to_install.extend(["pymongo==4.7.3", "dnspython==2.6.1"])
-
-try:
-    import click
-except ImportError:
-    packages_to_install.append("Click>=6.0")
-
-try:
-    import face_recognition_models
-except ImportError:
-    packages_to_install.append("face_recognition_models>=0.3.0")
-
-if packages_to_install:
+# 3. Check and install missing packages dynamically
+def install_fallback_dependencies():
+    packages_to_install = []
+    
     try:
-        subprocess.check_call([sys.executable, "-m", "pip", "install", "-t", deps_dir] + packages_to_install)
-    except Exception as e:
-        st.error(f"Critical fallback install failed for {packages_to_install}: {e}")
-        st.stop()
+        import pymongo
+    except ImportError:
+        packages_to_install.extend(["pymongo==4.7.3", "dnspython==2.6.1"])
+
+    try:
+        import dlib
+    except ImportError:
+        packages_to_install.append("dlib-bin==19.24.6")
+
+    try:
+        import face_recognition_models
+    except ImportError:
+        packages_to_install.append("face_recognition_models>=0.3.0")
+        
+    try:
+        import click
+    except ImportError:
+        packages_to_install.append("Click>=6.0")
+
+    if packages_to_install:
+        st.warning(f"Installing missing core dependencies: {', '.join(packages_to_install)}. Please wait...")
+        try:
+            subprocess.check_call([sys.executable, "-m", "pip", "install", "-t", deps_dir] + packages_to_install)
+        except Exception as e:
+            st.error(f"Failed to install dependencies: {e}")
+            st.stop()
+
+    try:
+        import face_recognition
+    except ImportError:
+        st.warning("Installing face_recognition wrapper...")
+        try:
+            subprocess.check_call([sys.executable, "-m", "pip", "install", "-t", deps_dir, "--no-deps", "face_recognition"])
+        except Exception as e:
+            st.error(f"Failed to install face_recognition: {e}")
+            st.stop()
+
+install_fallback_dependencies()
 
 try:
+    from pymongo import MongoClient
     import face_recognition
-except ImportError:
-    try:
-        # Install face_recognition with --no-deps so it doesn't attempt to compile dlib
-        subprocess.check_call([sys.executable, "-m", "pip", "install", "-t", deps_dir, "--no-deps", "face_recognition"])
-    except Exception as e:
-        st.error(f"Failed to install face_recognition: {e}")
-        st.stop()
+except Exception as e:
+    st.error(f"Final import check failed: {e}")
+    st.stop()
 
-from pymongo import MongoClient
-import face_recognition
+import numpy as np
+import time
+import pickle
+from datetime import datetime
+import io
+from PIL import Image
 from streamlit_webrtc import webrtc_streamer, WebRtcMode, RTCConfiguration
 import av
 
