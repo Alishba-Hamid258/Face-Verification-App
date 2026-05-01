@@ -117,6 +117,10 @@ def main():
         if st.session_state.get("is_admin"):
             is_admin = True
             st.info("Status: Admin Mode Active")
+            if st.button("Refresh Database"):
+                st.cache_data.clear()
+                st.success("Cache cleared!")
+                st.rerun()
             if st.button("Logout"):
                 st.session_state["is_admin"] = False
                 st.rerun()
