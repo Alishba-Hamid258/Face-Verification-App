@@ -3,6 +3,7 @@ import os
 import sys
 import subprocess
 import importlib
+import time
 
 # Ensure /tmp/deps is in path
 deps_dir = "/tmp/deps"
