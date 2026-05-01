@@ -7,34 +7,33 @@ import io
 from PIL import Image
 import sys
 import os
+import subprocess
 
-# Inject the Streamlit Cloud venv directly into sys.path
-venv_site_packages = "/home/adminuser/venv/lib/python3.11/site-packages"
-if os.path.exists(venv_site_packages) and venv_site_packages not in sys.path:
-    sys.path.insert(0, venv_site_packages)
+deps_dir = "/tmp/deps"
+os.makedirs(deps_dir, exist_ok=True)
+if deps_dir not in sys.path:
+    sys.path.insert(0, deps_dir)
 
-from pymongo import MongoClient
+packages_to_install = []
+try:
+    import pymongo
+except ImportError:
+    packages_to_install.extend(["pymongo==4.7.3", "dnspython==2.6.1"])
 
 try:
     import face_recognition
 except ImportError:
-    import sys
-    import subprocess
-    import os
-    
-    deps_dir = "/tmp/deps"
-    os.makedirs(deps_dir, exist_ok=True)
-    
+    packages_to_install.extend(["face_recognition", "dlib"])
+
+if packages_to_install:
     try:
-        subprocess.check_call([sys.executable, "-m", "pip", "install", "-t", deps_dir, "face_recognition", "dlib"])
+        subprocess.check_call([sys.executable, "-m", "pip", "install", "-t", deps_dir] + packages_to_install)
     except Exception as e:
-        st.error(f"Critical error loading face_recognition: Fallback install failed: {e}")
+        st.error(f"Critical fallback install failed for {packages_to_install}: {e}")
         st.stop()
-        
-    if deps_dir not in sys.path:
-        sys.path.insert(0, deps_dir)
-        
-    import face_recognition
+
+from pymongo import MongoClient
+import face_recognition
 from streamlit_webrtc import webrtc_streamer, WebRtcMode, RTCConfiguration
 import av
 
