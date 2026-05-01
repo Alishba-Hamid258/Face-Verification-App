@@ -1,380 +1,162 @@
 import streamlit as st
-import numpy as np
+import os
+import sys
 import time
 import pickle
+import numpy as np
 from datetime import datetime
-import io
 from PIL import Image
-import sys
-import os
-import subprocess
-import streamlit as st
-import importlib
+import av
+from streamlit_webrtc import webrtc_streamer, WebRtcMode, RTCConfiguration
 
-# 1. Inject the Streamlit Cloud venv directly into sys.path
-venv_site_packages = "/home/adminuser/venv/lib/python3.11/site-packages"
-if os.path.exists(venv_site_packages) and venv_site_packages not in sys.path:
-    sys.path.insert(0, venv_site_packages)
-
-# 2. Setup dynamic fallback directory
-deps_dir = "/tmp/deps"
-os.makedirs(deps_dir, exist_ok=True)
-if deps_dir not in sys.path:
-    sys.path.insert(0, deps_dir)
-
-st.title("Debug Mode: Starting Up...")
-
-# 3. Robust Setup Block
-def run_setup():
-    try:
-        st.write("Checking dependencies...")
-        packages_to_install = []
-        
-        # Check folders
-        if not os.path.exists(os.path.join(deps_dir, "pymongo")):
-            packages_to_install.extend(["pymongo==4.7.3", "dnspython==2.6.1"])
-
-        if not os.path.exists(os.path.join(deps_dir, "dlib.so")) and not os.path.exists(os.path.join(deps_dir, "dlib")):
-            packages_to_install.append("dlib-bin==19.24.6")
-
-        if not os.path.exists(os.path.join(deps_dir, "face_recognition_models")):
-            packages_to_install.append("face_recognition_models>=0.3.0")
-
-        if packages_to_install:
-            st.info(f"Downloading: {packages_to_install}")
-            subprocess.check_call([sys.executable, "-m", "pip", "install", "-q", "--progress-bar", "off", "-t", deps_dir] + packages_to_install)
-            importlib.invalidate_caches()
-            st.rerun() 
-            
-        st.write("Importing libraries...")
-        importlib.invalidate_caches()
-        
-        st.write("- Importing pymongo...")
-        from pymongo import MongoClient
-        
-        st.write("- Importing numpy...")
-        import numpy as np
-        
-        st.write("- Importing face_recognition (This might crash if dlib is broken)...")
-        import face_recognition
-        
-        st.write("- Importing AV/WebRTC...")
-        import av
-        
-        return MongoClient, face_recognition, np, av
-        
-    except Exception as e:
-        st.error("🚨 Startup Error")
-        st.exception(e)
-        st.stop()
-
-# Execute Setup
-result = run_setup()
-if not result:
+# Diagnostic check
+try:
+    import face_recognition
+    from pymongo import MongoClient
+except ImportError as e:
+    st.error(f"🚨 Startup Error: {e}")
+    st.info("The system is performing a one-time setup. Please wait 60 seconds and click 'Reboot App' in the sidebar.")
     st.stop()
 
-MongoClient, face_recognition, np, av = result
-
-import pickle
-from PIL import Image
-import time
-from datetime import datetime
-from streamlit_webrtc import webrtc_streamer, WebRtcMode, RTCConfiguration
 from config import MONGODB_URI, MONGODB_DB_NAME, MONGODB_COLLECTION, CACHE_DURATION
 
-st.write("Success! Application ready.")
-st.title("Face Verification System")
-
-import time
-from datetime import datetime
-from streamlit_webrtc import webrtc_streamer, WebRtcMode, RTCConfiguration
-from config import MONGODB_URI, MONGODB_DB_NAME, MONGODB_COLLECTION, CACHE_DURATION
-
-st.title("Face Verification System")
-
-# --- Database & Caching ---
+# --- MongoDB Setup ---
 @st.cache_resource
 def get_database():
     try:
         client = MongoClient(MONGODB_URI)
-        db = client[MONGODB_DB_NAME]
-        collection = db[MONGODB_COLLECTION]
-        return client, collection
+        return client[MONGODB_DB_NAME]
     except Exception as e:
-        st.error(f"MongoDB connection failed: {e}")
-        return None, None
+        st.error(f"Database connection failed: {e}")
+        return None
 
-client, collection = get_database()
-
-if collection is None:
+db = get_database()
+if db is not None:
+    collection = db[MONGODB_COLLECTION]
+else:
+    st.error("Database not available.")
     st.stop()
 
+# --- Face Verification Logic ---
 @st.cache_data(ttl=CACHE_DURATION)
 def load_embeddings():
-    cached_encodings = []
-    cached_names = []
     try:
-        for doc in collection.find():
-            if 'face_embedding' in doc:
-                cached_names.append(doc['name'])
-                cached_encodings.append(pickle.loads(bytes.fromhex(doc['face_embedding'])))
+        data = list(collection.find({}, {"name": 1, "embedding": 1}))
+        names = [d["name"] for d in data]
+        embeddings = [pickle.loads(d["embedding"]) for d in data]
+        return names, embeddings
     except Exception as e:
-        st.error(f"Error loading embeddings: {e}")
-    return cached_encodings, cached_names
+        st.error(f"Failed to load embeddings: {e}")
+        return [], []
 
-# --- Helper Functions ---
-def resize_with_aspect_ratio(image, width=None, height=None):
-    if width is None and height is None:
-        return image
-    
-    pil_image = Image.fromarray(image)
-    w, h = pil_image.size
-    
-    if width is None:
-        r = height / float(h)
-        dim = (int(w * r), height)
-    else:
-        r = width / float(w)
-        dim = (width, int(h * r))
-        
-    resized_pil = pil_image.resize(dim, Image.Resampling.LANCZOS)
-    return np.array(resized_pil)
-
-def process_uploaded_image(uploaded_file):
-    contents = uploaded_file.read()
-    pil_image = Image.open(io.BytesIO(contents)).convert('RGB')
-    rgb_image = np.array(pil_image)
-    return verify_face_in_image(rgb_image)
-
-def verify_face_in_image(rgb_image):
-    rgb_image = resize_with_aspect_ratio(rgb_image, width=320)
-    known_encodings, known_names = load_embeddings()
-    
-    if not known_encodings:
-        return {"matched": False, "name": "Unknown", "distance": None, "error": "No known faces in database."}
-
-    face_locations = face_recognition.face_locations(rgb_image, model="hog")
+def get_face_embeddings(image_np):
+    face_locations = face_recognition.face_locations(image_np)
     if not face_locations:
-        face_locations = face_recognition.face_locations(rgb_image, model="cnn")
-    if not face_locations:
-        return {"matched": False, "name": "Unknown", "distance": None, "error": "No face detected"}
+        return None
+    return face_recognition.face_encodings(image_np, face_locations)[0]
 
-    face_encodings = face_recognition.face_encodings(rgb_image, face_locations)
-    if not face_encodings:
-        return {"matched": False, "name": "Unknown", "distance": None, "error": "No face encoding detected"}
-    
-    face_encoding = face_encodings[0]
-    matches = face_recognition.compare_faces(known_encodings, face_encoding, tolerance=0.6)
-    face_distances = face_recognition.face_distance(known_encodings, face_encoding)
+def verify_face(target_embedding, known_embeddings, tolerance=0.6):
+    if not known_embeddings:
+        return None, 0.0
+    distances = face_recognition.face_distance(known_embeddings, target_embedding)
+    min_distance_idx = np.argmin(distances)
+    if distances[min_distance_idx] <= tolerance:
+        return min_distance_idx, distances[min_distance_idx]
+    return None, distances[min_distance_idx]
 
-    if any(matches):
-        best_match_index = np.argmin(face_distances)
-        if matches[best_match_index]:
-            name = known_names[best_match_index]
-            doc = collection.find_one({'name': name})
-            return {
-                "matched": True,
-                "name": name,
-                "description": doc.get('description'),
-                "party": doc.get('party'),
-                "distance": face_distances[best_match_index]
-            }
-    return {"matched": False, "name": "Unknown", "distance": min(face_distances) if face_distances.size else None}
+# --- UI Components ---
+def main():
+    st.set_page_config(page_title="Face Verification", layout="wide")
+    st.title("Face Verification System")
 
+    # Sidebar Admin Login
+    with st.sidebar:
+        st.header("Admin Access")
+        admin_user = st.text_input("Username")
+        admin_pass = st.text_input("Password", type="password")
+        is_admin = admin_user == "admin" and admin_pass == "secret123" # Secure this in production
 
-# --- UI ---
-known_encodings, known_names = load_embeddings()
-st.write(f"Known faces: {known_names}")
+    # Main Tabs
+    tab1, tab2 = st.tabs(["Verification", "Face Database"])
 
-st.subheader("Upload Image for Face Verification")
-uploaded_file = st.file_uploader("Choose an image (.jpg, .png)", type=["jpg", "png"])
-if uploaded_file is not None:
-    result = process_uploaded_image(uploaded_file)
-    if result.get("error"):
-        st.error(result["error"])
-    elif result.get("matched"):
-        st.success(f"Matched: {result['name']} (Distance: {result['distance']:.2f})")
-        st.write(f"Description: {result['description']}")
-        st.write(f"Party: {result['party']}")
-    else:
-        st.warning("No match found.")
-
-# --- Admin Login Sidebar ---
-st.sidebar.title("Admin Login")
-if "admin_logged_in" not in st.session_state:
-    st.session_state.admin_logged_in = False
-
-if not st.session_state.admin_logged_in:
-    with st.sidebar.form("login_form"):
-        username = st.text_input("Username")
-        password = st.text_input("Password", type="password")
-        login_submitted = st.form_submit_button("Login")
-        if login_submitted:
-            if username == "admin" and password == "secret123":
-                st.session_state.admin_logged_in = True
-                st.rerun()
-            else:
-                st.sidebar.error("Invalid credentials")
-else:
-    st.sidebar.success("Logged in as admin")
-    if st.sidebar.button("Logout"):
-        st.session_state.admin_logged_in = False
-        st.rerun()
-
-# --- Admin Controls ---
-if st.session_state.admin_logged_in:
-    st.subheader("Add a New Person")
-    with st.form(key="add_person_form"):
-        new_name = st.text_input("Name")
-        new_description = st.text_input("Description")
-        new_party = st.text_input("Party")
-        new_images = st.file_uploader("Upload Images for New Person", type=["jpg", "png"], accept_multiple_files=True)
-        submit_button = st.form_submit_button(label="Add Person")
-
-        if submit_button and new_images and new_name and new_description and new_party:
-            encodings = []
-            image_sources = []
-            for image in new_images:
-                contents = image.read()
-                pil_image = Image.open(io.BytesIO(contents)).convert('RGB')
-                rgb_image = np.array(pil_image)
-                rgb_image = resize_with_aspect_ratio(rgb_image, width=320)
-                face_locations = face_recognition.face_locations(rgb_image, model="hog")
-                if not face_locations:
-                    face_locations = face_recognition.face_locations(rgb_image, model="cnn")
-                if face_locations:
-                    face_encodings = face_recognition.face_encodings(rgb_image, face_locations)
-                    if face_encodings:
-                        encodings.append(face_encodings[0])
-                        image_sources.append(image.name)
-            
-            if not encodings:
-                st.error("No faces detected in any uploaded images.")
-            else:
-                avg_encoding = np.mean(encodings, axis=0)
-                collection.update_one(
-                    {'name': new_name},
-                    {'$set': {
-                        'face_embedding': pickle.dumps(avg_encoding).hex(),
-                        'details.image_sources': image_sources,
-                        'details.image_count': len(encodings),
-                        'details.updated_at': datetime.now().strftime('%Y-%m-%d'),
-                        'description': new_description,
-                        'party': new_party
-                    }},
-                    upsert=True
-                )
-                st.success(f"Added {new_name} with {len(encodings)} images.")
-                load_embeddings.clear() # Clear cache
-                time.sleep(1)
-                st.rerun()
-
-    st.subheader("Edit an Existing Person")
-    with st.form(key="edit_person_form"):
-        old_name = st.selectbox("Select Person to Edit", known_names)
-        edit_new_name = st.text_input("New Name", value=old_name if old_name else "")
-        edit_description = st.text_input("New Description")
-        edit_party = st.text_input("New Party")
-        edit_images = st.file_uploader("Upload New Images (Optional)", type=["jpg", "png"], accept_multiple_files=True)
-        submit_edit = st.form_submit_button(label="Edit Person")
-
-        if submit_edit and old_name:
-            encodings = []
-            image_sources = []
-            if edit_images:
-                for image in edit_images:
-                    contents = image.read()
-                    pil_image = Image.open(io.BytesIO(contents)).convert('RGB')
-                    rgb_image = np.array(pil_image)
-                    rgb_image = resize_with_aspect_ratio(rgb_image, width=320)
-                    face_locations = face_recognition.face_locations(rgb_image, model="hog")
-                    if not face_locations:
-                        face_locations = face_recognition.face_locations(rgb_image, model="cnn")
-                    if face_locations:
-                        face_encodings = face_recognition.face_encodings(rgb_image, face_locations)
-                        if face_encodings:
-                            encodings.append(face_encodings[0])
-                            image_sources.append(image.name)
-            
-            update_fields = {}
-            if edit_new_name: update_fields['name'] = edit_new_name
-            if edit_description: update_fields['description'] = edit_description
-            if edit_party: update_fields['party'] = edit_party
-            update_fields['details.updated_at'] = datetime.now().strftime('%Y-%m-%d')
-            
-            if encodings:
-                avg_encoding = np.mean(encodings, axis=0)
-                update_fields['face_embedding'] = pickle.dumps(avg_encoding).hex()
-                update_fields['details.image_sources'] = image_sources
-                update_fields['details.image_count'] = len(encodings)
-            
-            result = collection.update_one({'name': old_name}, {'$set': update_fields})
-            if result.matched_count == 0:
-                st.error("Politician not found.")
-            else:
-                st.success(f"Edited {old_name}.")
-                load_embeddings.clear()
-                time.sleep(1)
-                st.rerun()
-
-    st.subheader("Delete a Person")
-    with st.form(key="delete_person_form"):
-        delete_name = st.selectbox("Select Person to Delete", known_names)
-        submit_delete = st.form_submit_button(label="Delete Person")
-
-        if submit_delete and delete_name:
-            result = collection.delete_one({'name': delete_name})
-            if result.deleted_count == 0:
-                st.error("Politician not found.")
-            else:
-                st.success(f"Deleted {delete_name}.")
-                load_embeddings.clear()
-                time.sleep(1)
-                st.rerun()
-else:
-    st.info("🔒 Please log in via the sidebar to Add, Edit, or Delete people in the database.")
-
-
-# --- WebRTC Camera Controls ---
-st.subheader("Live Camera Verification")
-st.write("Click 'Start' to begin live verification using your camera.")
-
-class FaceProcessor:
-    def __init__(self):
-        self.frame_count = 0
-        self.last_result = None
-
-    def recv(self, frame: av.VideoFrame) -> av.VideoFrame:
-        img = frame.to_ndarray(format="rgb24")
-        self.frame_count += 1
+    with tab1:
+        st.subheader("Live Verification")
+        names, embeddings = load_embeddings()
         
-        # Process every 15 frames to avoid lagging
-        if self.frame_count % 15 == 0:
-            self.last_result = verify_face_in_image(img)
-            
-        if self.last_result:
-            from PIL import ImageDraw
-            pil_img = Image.fromarray(img)
-            draw = ImageDraw.Draw(pil_img)
-            
-            if self.last_result.get("matched"):
-                name = self.last_result["name"]
-                distance = self.last_result["distance"]
-                party = self.last_result.get("party", "")
-                draw.text((10, 30), f"Match: {name} ({distance:.2f})", fill=(0, 255, 0))
-                draw.text((10, 60), f"Party: {party}", fill=(0, 255, 0))
-            elif not self.last_result.get("error"):
-                draw.text((10, 30), "No Match", fill=(255, 0, 0))
+        if not names:
+            st.warning("Database is empty. Please add faces in the Database tab.")
+        
+        rtc_config = RTCConfiguration({"iceServers": [{"urls": ["stun:stun.l.google.com:19302"]}]})
+        
+        webrtc_ctx = webrtc_streamer(
+            key="verification",
+            mode=WebRtcMode.SENDRECV,
+            rtc_configuration=rtc_config,
+            media_stream_constraints={"video": True, "audio": False},
+            async_processing=True,
+        )
+
+        if webrtc_ctx.video_receiver:
+            try:
+                frame = webrtc_ctx.video_receiver.get_frame(timeout=1)
+                img = frame.to_ndarray(format="rgb24")
                 
-            img = np.array(pil_img)
-            
-        return av.VideoFrame.from_ndarray(img, format="rgb24")
+                target_emb = get_face_embeddings(img)
+                if target_emb is not None:
+                    idx, dist = verify_face(target_emb, embeddings)
+                    if idx is not None:
+                        st.success(f"Verified: {names[idx]} (Confidence: {1-dist:.2%})")
+                    else:
+                        st.error("Face not recognized")
+                else:
+                    st.info("No face detected in frame")
+            except Exception:
+                pass
 
-webrtc_streamer(
-    key="face-verification",
-    mode=WebRtcMode.SENDRECV,
-    rtc_configuration=RTCConfiguration({"iceServers": [{"urls": ["stun:stun.l.google.com:19302"]}]}),
-    video_processor_factory=FaceProcessor,
-    media_stream_constraints={"video": True, "audio": False},
-    async_processing=True,
-)
+    with tab2:
+        if not is_admin:
+            st.info("Please login as admin to manage faces")
+        else:
+            st.subheader("Manage Known Faces")
+            
+            # Add New Face
+            with st.expander("Add New Face"):
+                new_name = st.text_input("Name")
+                uploaded_file = st.file_uploader("Upload Face Image", type=['jpg', 'jpeg', 'png'])
+                
+                if st.button("Add to Database"):
+                    if new_name and uploaded_file:
+                        image = Image.open(uploaded_file).convert('RGB')
+                        img_np = np.array(image)
+                        emb = get_face_embeddings(img_np)
+                        
+                        if emb is not None:
+                            try:
+                                collection.insert_one({
+                                    "name": new_name,
+                                    "embedding": pickle.dumps(emb),
+                                    "created_at": datetime.now()
+                                })
+                                st.success(f"Added {new_name} to database!")
+                                st.cache_data.clear()
+                            except Exception as e:
+                                st.error(f"Save failed: {e}")
+                        else:
+                            st.error("Could not find a face in the uploaded image")
+                    else:
+                        st.warning("Please provide both name and image")
+
+            # Database View
+            st.divider()
+            names, _ = load_embeddings()
+            for name in names:
+                col1, col2 = st.columns([4, 1])
+                col1.write(name)
+                if col2.button("Delete", key=f"del_{name}"):
+                    collection.delete_one({"name": name})
+                    st.success(f"Deleted {name}")
+                    st.cache_data.clear()
+                    st.rerun()
+
+if __name__ == "__main__":
+    main()
