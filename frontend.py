@@ -69,9 +69,16 @@ def load_embeddings():
     if db is None: return [], []
     try:
         collection = db[MONGODB_COLLECTION]
-        data = list(collection.find({}, {"name": 1, "embedding": 1}))
-        names = [d["name"] for d in data]
-        embeddings = [pickle.loads(d["embedding"]) for d in data]
+        data = list(collection.find({}, {"name": 1, "face_embedding": 1, "embedding": 1}))
+        names = []
+        embeddings = []
+        for d in data:
+            names.append(d["name"])
+            raw = d.get("face_embedding") or d.get("embedding")
+            if isinstance(raw, str):
+                embeddings.append(pickle.loads(bytes.fromhex(raw)))
+            else:
+                embeddings.append(pickle.loads(raw))
         return names, embeddings
     except Exception:
         return [], []
@@ -199,13 +206,16 @@ def main():
                         
                         if emb is not None:
                             try:
+                                # Save as hex string to match existing data format
+                                emb_hex = pickle.dumps(emb).hex()
                                 collection.insert_one({
                                     "name": new_name,
-                                    "embedding": pickle.dumps(emb),
+                                    "face_embedding": emb_hex,
                                     "created_at": datetime.now()
                                 })
                                 st.success(f"Added {new_name} to database!")
                                 st.cache_data.clear()
+                                st.rerun()
                             except Exception as e:
                                 st.error(f"Save failed: {e}")
                         else:
