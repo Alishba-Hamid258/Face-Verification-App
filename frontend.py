@@ -9,6 +9,7 @@ import sys
 import os
 import subprocess
 import streamlit as st
+import importlib
 
 # 1. Inject the Streamlit Cloud venv directly into sys.path
 venv_site_packages = "/home/adminuser/venv/lib/python3.11/site-packages"
@@ -21,58 +22,58 @@ os.makedirs(deps_dir, exist_ok=True)
 if deps_dir not in sys.path:
     sys.path.insert(0, deps_dir)
 
-import importlib
-
-# 3. Check and install missing packages dynamically
-def install_fallback_dependencies():
-    packages_to_install = []
-    
-    # Check for folders in /tmp/deps to see if they are already installed
-    if not os.path.exists(os.path.join(deps_dir, "pymongo")):
-        packages_to_install.extend(["pymongo==4.7.3", "dnspython==2.6.1"])
-
-    if not os.path.exists(os.path.join(deps_dir, "dlib.so")) and not os.path.exists(os.path.join(deps_dir, "dlib")):
-        packages_to_install.append("dlib-bin==19.24.6")
-
-    if not os.path.exists(os.path.join(deps_dir, "face_recognition_models")):
-        packages_to_install.append("face_recognition_models>=0.3.0")
+# 3. Robust Setup Block
+def run_setup():
+    try:
+        packages_to_install = []
         
-    if not os.path.exists(os.path.join(deps_dir, "click")):
-        packages_to_install.append("Click>=6.0")
+        # Check for folders in /tmp/deps to see if they are already installed
+        if not os.path.exists(os.path.join(deps_dir, "pymongo")):
+            packages_to_install.extend(["pymongo==4.7.3", "dnspython==2.6.1"])
 
-    if not os.path.exists(os.path.join(deps_dir, "face_recognition")):
-        packages_to_install.append("face_recognition")
+        if not os.path.exists(os.path.join(deps_dir, "dlib.so")) and not os.path.exists(os.path.join(deps_dir, "dlib")):
+            packages_to_install.append("dlib-bin==19.24.6")
 
-    if packages_to_install:
-        st.warning(f"Setting up environment... (This happens only once)")
-        try:
+        if not os.path.exists(os.path.join(deps_dir, "face_recognition_models")):
+            packages_to_install.append("face_recognition_models>=0.3.0")
+            
+        if not os.path.exists(os.path.join(deps_dir, "click")):
+            packages_to_install.append("Click>=6.0")
+
+        if not os.path.exists(os.path.join(deps_dir, "face_recognition")):
+            packages_to_install.append("face_recognition")
+
+        if packages_to_install:
+            placeholder = st.empty()
+            placeholder.warning("Initializing AI components... Please wait (One-time setup)")
             # Install EVERYTHING in one go
             subprocess.check_call([sys.executable, "-m", "pip", "install", "-q", "--progress-bar", "off", "-t", deps_dir] + packages_to_install)
             importlib.invalidate_caches()
-            st.rerun() # Force a rerun to pick up the new packages
-        except Exception as e:
-            st.error(f"Setup failed: {e}")
-            st.stop()
+            placeholder.empty()
+            st.rerun() 
+            
+        # Final Verification
+        importlib.invalidate_caches()
+        from pymongo import MongoClient
+        import face_recognition
+        import numpy as np
+        import pickle
+        from PIL import Image
+        import av
+        return MongoClient, face_recognition, np, pickle, Image, av
+        
+    except Exception as e:
+        st.error("🚨 Critical Startup Error")
+        st.exception(e)
+        st.info("Tip: Try clicking 'Reboot App' in the sidebar if this persists.")
+        st.stop()
 
-install_fallback_dependencies()
+# Execute Setup
+MongoClient, face_recognition, np, pickle, Image, av = run_setup()
 
-try:
-    importlib.invalidate_caches()
-    from pymongo import MongoClient
-    import face_recognition
-except Exception as e:
-    st.error(f"Startup check failed: {e}. Please click 'Reboot App' in the sidebar.")
-    st.stop()
-
-import numpy as np
 import time
-import pickle
 from datetime import datetime
-import io
-from PIL import Image
 from streamlit_webrtc import webrtc_streamer, WebRtcMode, RTCConfiguration
-import av
-
 from config import MONGODB_URI, MONGODB_DB_NAME, MONGODB_COLLECTION, CACHE_DURATION
 
 st.title("Face Verification System")
