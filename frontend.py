@@ -22,12 +22,15 @@ os.makedirs(deps_dir, exist_ok=True)
 if deps_dir not in sys.path:
     sys.path.insert(0, deps_dir)
 
+st.title("Debug Mode: Starting Up...")
+
 # 3. Robust Setup Block
 def run_setup():
     try:
+        st.write("Checking dependencies...")
         packages_to_install = []
         
-        # Check for folders in /tmp/deps to see if they are already installed
+        # Check folders
         if not os.path.exists(os.path.join(deps_dir, "pymongo")):
             packages_to_install.extend(["pymongo==4.7.3", "dnspython==2.6.1"])
 
@@ -36,40 +39,51 @@ def run_setup():
 
         if not os.path.exists(os.path.join(deps_dir, "face_recognition_models")):
             packages_to_install.append("face_recognition_models>=0.3.0")
-            
-        if not os.path.exists(os.path.join(deps_dir, "click")):
-            packages_to_install.append("Click>=6.0")
-
-        if not os.path.exists(os.path.join(deps_dir, "face_recognition")):
-            packages_to_install.append("face_recognition")
 
         if packages_to_install:
-            placeholder = st.empty()
-            placeholder.warning("Initializing AI components... Please wait (One-time setup)")
-            # Install EVERYTHING in one go
+            st.info(f"Downloading: {packages_to_install}")
             subprocess.check_call([sys.executable, "-m", "pip", "install", "-q", "--progress-bar", "off", "-t", deps_dir] + packages_to_install)
             importlib.invalidate_caches()
-            placeholder.empty()
             st.rerun() 
             
-        # Final Verification
+        st.write("Importing libraries...")
         importlib.invalidate_caches()
+        
+        st.write("- Importing pymongo...")
         from pymongo import MongoClient
-        import face_recognition
+        
+        st.write("- Importing numpy...")
         import numpy as np
-        import pickle
-        from PIL import Image
+        
+        st.write("- Importing face_recognition (This might crash if dlib is broken)...")
+        import face_recognition
+        
+        st.write("- Importing AV/WebRTC...")
         import av
-        return MongoClient, face_recognition, np, pickle, Image, av
+        
+        return MongoClient, face_recognition, np, av
         
     except Exception as e:
-        st.error("🚨 Critical Startup Error")
+        st.error("🚨 Startup Error")
         st.exception(e)
-        st.info("Tip: Try clicking 'Reboot App' in the sidebar if this persists.")
         st.stop()
 
 # Execute Setup
-MongoClient, face_recognition, np, pickle, Image, av = run_setup()
+result = run_setup()
+if not result:
+    st.stop()
+
+MongoClient, face_recognition, np, av = result
+
+import pickle
+from PIL import Image
+import time
+from datetime import datetime
+from streamlit_webrtc import webrtc_streamer, WebRtcMode, RTCConfiguration
+from config import MONGODB_URI, MONGODB_DB_NAME, MONGODB_COLLECTION, CACHE_DURATION
+
+st.write("Success! Application ready.")
+st.title("Face Verification System")
 
 import time
 from datetime import datetime
