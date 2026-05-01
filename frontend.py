@@ -46,7 +46,12 @@ from config import MONGODB_URI, MONGODB_DB_NAME, MONGODB_COLLECTION, CACHE_DURAT
 def get_database():
     try:
         from pymongo import MongoClient
-        client = MongoClient(MONGODB_URI, serverSelectionTimeoutMS=5000)
+        client = MongoClient(
+            MONGODB_URI, 
+            serverSelectionTimeoutMS=5000,
+            tls=True,
+            tlsAllowInvalidCertificates=True
+        )
         client.admin.command('ping')
         return client[MONGODB_DB_NAME]
     except Exception as e:
