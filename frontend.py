@@ -66,7 +66,7 @@ def get_database():
 def load_embeddings():
     import pickle
     db = get_database()
-    if not db: return [], []
+    if db is None: return [], []
     try:
         collection = db[MONGODB_COLLECTION]
         data = list(collection.find({}, {"name": 1, "embedding": 1}))
