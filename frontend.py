@@ -66,22 +66,31 @@ def get_database():
 def load_embeddings():
     import pickle
     db = get_database()
-    if db is None: return [], []
+    if db is None: return []
     try:
         collection = db[MONGODB_COLLECTION]
-        data = list(collection.find({}, {"name": 1, "face_embedding": 1, "embedding": 1}))
-        names = []
-        embeddings = []
+        # Fetch names, embeddings, parties, and descriptions
+        data = list(collection.find({}, {"name": 1, "face_embedding": 1, "embedding": 1, "party": 1, "description": 1}))
+        processed_data = []
         for d in data:
-            names.append(d["name"])
             raw = d.get("face_embedding") or d.get("embedding")
+            if not raw: continue
+            
+            emb = None
             if isinstance(raw, str):
-                embeddings.append(pickle.loads(bytes.fromhex(raw)))
+                emb = pickle.loads(bytes.fromhex(raw))
             else:
-                embeddings.append(pickle.loads(raw))
-        return names, embeddings
+                emb = pickle.loads(raw)
+            
+            processed_data.append({
+                "name": d.get("name", "Unknown"),
+                "embedding": emb,
+                "party": d.get("party", "N/A"),
+                "description": d.get("description", "No details available")
+            })
+        return processed_data
     except Exception:
-        return [], []
+        return []
 
 def get_face_embeddings(image_np):
     import face_recognition
@@ -137,10 +146,13 @@ def main():
 
     with tab1:
         st.subheader("Live Verification")
-        names, embeddings = load_embeddings()
+        db_data = load_embeddings()
         
-        if not names:
+        if not db_data:
             st.warning("Database is empty. Please add faces in the Database tab.")
+        
+        # Prepare for recognition
+        all_embeddings = [d["embedding"] for d in db_data]
         
         # Heavy imports for WebRTC
         try:
@@ -167,13 +179,15 @@ def main():
                 
                 target_emb = get_face_embeddings(img)
                 if target_emb is not None:
-                    idx, dist = verify_face(target_emb, embeddings)
+                    idx, dist = verify_face(target_emb, all_embeddings)
                     if idx is not None:
-                        st.success(f"Verified: {names[idx]} (Confidence: {1-dist:.2%})")
+                        person = db_data[idx]
+                        st.success(f"✅ Verified: {person['name']} (Confidence: {1-dist:.2%})")
+                        st.info(f"📍 **Party:** {person['party']}\n\n📝 **Details:** {person['description']}")
                     else:
-                        st.error("Face not recognized")
+                        st.error("❌ Face not recognized")
                 else:
-                    st.info("No face detected in frame")
+                    st.info("📷 Scanning for face...")
             except Exception:
                 pass
 
@@ -225,10 +239,11 @@ def main():
 
             # Database View
             st.divider()
-            names, _ = load_embeddings()
-            for name in names:
+            db_view_data = load_embeddings()
+            for person in db_view_data:
+                name = person["name"]
                 col1, col2 = st.columns([4, 1])
-                col1.write(name)
+                col1.write(f"👤 {name} ({person['party']})")
                 if col2.button("Delete", key=f"del_{name}"):
                     collection.delete_one({"name": name})
                     st.success(f"Deleted {name}")
