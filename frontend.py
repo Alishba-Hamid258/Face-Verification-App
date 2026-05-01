@@ -173,23 +173,31 @@ def main():
         )
 
         if webrtc_ctx.video_receiver:
-            try:
-                frame = webrtc_ctx.video_receiver.get_frame(timeout=1)
-                img = frame.to_ndarray(format="rgb24")
-                
-                target_emb = get_face_embeddings(img)
-                if target_emb is not None:
-                    idx, dist = verify_face(target_emb, all_embeddings)
-                    if idx is not None:
-                        person = db_data[idx]
-                        st.success(f"✅ Verified: {person['name']} (Confidence: {1-dist:.2%})")
-                        st.info(f"📍 **Party:** {person['party']}\n\n📝 **Details:** {person['description']}")
-                    else:
-                        st.error("❌ Face not recognized")
-                else:
-                    st.info("📷 Scanning for face...")
-            except Exception:
-                pass
+            if st.button("🔍 Identify Personality"):
+                try:
+                    frame = webrtc_ctx.video_receiver.get_frame(timeout=3)
+                    if frame:
+                        img = frame.to_ndarray(format="rgb24")
+                        status_area = st.empty()
+                        status_area.info("⏳ Analyzing face...")
+                        
+                        target_emb = get_face_embeddings(img)
+                        if target_emb is not None:
+                            idx, dist = verify_face(target_emb, all_embeddings)
+                            status_area.empty()
+                            if idx is not None:
+                                person = db_data[idx]
+                                st.success(f"✅ Verified: {person['name']} (Confidence: {1-dist:.2%})")
+                                st.info(f"📍 **Party:** {person['party']}\n\n📝 **Details:** {person['description']}")
+                            else:
+                                st.error("❌ Personality not recognized in database")
+                        else:
+                            status_area.empty()
+                            st.warning("📷 Could not detect a clear face. Please try again.")
+                except Exception as e:
+                    st.error(f"📸 Camera error: {e}")
+        else:
+            st.info("💡 Click 'START' and wait for the camera to load, then click 'Identify Personality'.")
 
     with tab2:
         if not is_admin:
