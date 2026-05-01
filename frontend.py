@@ -17,45 +17,52 @@ os.makedirs(deps_dir, exist_ok=True)
 if deps_dir not in sys.path:
     sys.path.insert(0, deps_dir)
 
+st.write("🔍 System Check...")
+
 # 2. Silent non-blocking install of face_recognition
-# We do this here because putting it in requirements.txt forces the server 
-# to try and compile 'dlib' from source, which causes the infinite hang.
 try:
     import face_recognition
     import face_recognition_models
+    st.write("✅ AI Engine Loaded")
 except ImportError:
-    st.warning("Finalizing AI components... Please wait 60 seconds.")
-    try:
-        # --no-deps is CRITICAL. It prevents the server from trying to compile dlib.
-        subprocess.check_call([
-            sys.executable, "-m", "pip", "install", "-q", "--progress-bar", "off", 
-            "-t", deps_dir, "--no-deps", 
-            "face_recognition", "face-recognition-models"
-        ])
-        importlib.invalidate_caches()
-        st.rerun()
-    except Exception as e:
-        st.error(f"Setup failed: {e}")
-        st.stop()
+    st.write("📦 Installing AI components...")
+    with st.spinner("Downloading models (100MB)... Please stay on this page."):
+        try:
+            subprocess.check_call([
+                sys.executable, "-m", "pip", "install", "-q", "--progress-bar", "off", 
+                "-t", deps_dir, "--no-deps", 
+                "face_recognition", "face-recognition-models"
+            ])
+            importlib.invalidate_caches()
+            st.success("✅ Setup complete! Reloading...")
+            st.rerun()
+        except Exception as e:
+            st.error(f"Setup failed: {e}")
+            st.stop()
 
 from config import MONGODB_URI, MONGODB_DB_NAME, MONGODB_COLLECTION, CACHE_DURATION
+
+st.write("🔗 Connecting to Database...")
 
 # --- MongoDB Setup ---
 @st.cache_resource
 def get_database():
     try:
         from pymongo import MongoClient
-        client = MongoClient(MONGODB_URI)
+        client = MongoClient(MONGODB_URI, serverSelectionTimeoutMS=5000)
+        # Force a connection check
+        client.admin.command('ping')
         return client[MONGODB_DB_NAME]
     except Exception as e:
         st.error(f"Database connection failed: {e}")
+        st.info("Check your MongoDB Atlas IP whitelist. It must allow 0.0.0.0/0 for Streamlit Cloud.")
         return None
 
 db = get_database()
 if db is not None:
     collection = db[MONGODB_COLLECTION]
+    st.write("✅ Database Connected")
 else:
-    st.error("Database not available.")
     st.stop()
 
 # --- Face Verification Logic ---
