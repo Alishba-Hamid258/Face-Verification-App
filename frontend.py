@@ -99,7 +99,7 @@ def get_face_embeddings(image_np):
         return None
     return face_recognition.face_encodings(image_np, face_locations)[0]
 
-def verify_face(target_embedding, known_embeddings, tolerance=0.6):
+def verify_face(target_embedding, known_embeddings, tolerance=0.7):
     import face_recognition
     import numpy as np
     if not known_embeddings:
@@ -112,7 +112,7 @@ def verify_face(target_embedding, known_embeddings, tolerance=0.6):
 
 def process_identification(img, db_data, all_embeddings):
     status_area = st.empty()
-    status_area.info("⏳ Analyzing face...")
+    status_area.info("⏳ AI is analyzing the face...")
     
     target_emb = get_face_embeddings(img)
     if target_emb is not None:
@@ -123,10 +123,17 @@ def process_identification(img, db_data, all_embeddings):
             st.success(f"✅ Verified: {person['name']} (Confidence: {1-dist:.2%})")
             st.info(f"📍 **Party:** {person['party']}\n\n📝 **Details:** {person['description']}")
         else:
-            st.error("❌ Personality not recognized in database")
+            st.error(f"❌ No Match Found (Best match was only {1-dist:.2%})")
+            if st.checkbox("Show similarity scores (Debug)", key="debug_scores"):
+                st.write("Distances from known faces (Lower is better, < 0.7 is a match):")
+                import numpy as np
+                import face_recognition
+                distances = face_recognition.face_distance(all_embeddings, target_emb)
+                for i, d in enumerate(distances):
+                    st.write(f"- {db_data[i]['name']}: {d:.4f}")
     else:
         status_area.empty()
-        st.warning("📷 Could not detect a clear face. Please try again.")
+        st.warning("📷 Camera see no face. Please move closer or check lighting.")
 
 # --- Main UI ---
 def main():
