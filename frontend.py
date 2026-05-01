@@ -5,25 +5,16 @@ import pickle
 from datetime import datetime
 import io
 from PIL import Image
-try:
-    from pymongo import MongoClient
-except ImportError:
-    import sys
-    import subprocess
-    import os
-    
-    deps_dir = "/tmp/deps"
-    os.makedirs(deps_dir, exist_ok=True)
-    
-    try:
-        subprocess.check_call([sys.executable, "-m", "pip", "install", "-t", deps_dir, "pymongo==4.7.3", "dnspython==2.6.1"])
-    except Exception as e:
-        print(f"Fallback install failed: {e}")
-        
-    if deps_dir not in sys.path:
-        sys.path.insert(0, deps_dir)
-        
-    from pymongo import MongoClient
+import sys
+import os
+
+# Inject the Streamlit Cloud venv directly into sys.path
+venv_site_packages = "/home/adminuser/venv/lib/python3.11/site-packages"
+if os.path.exists(venv_site_packages) and venv_site_packages not in sys.path:
+    sys.path.insert(0, venv_site_packages)
+
+from pymongo import MongoClient
+
 try:
     import face_recognition
 except Exception as e:
