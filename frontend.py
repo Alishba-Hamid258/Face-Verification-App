@@ -191,32 +191,40 @@ def main():
             async_processing=True,
         )
 
-        # 2. Identification Actions
-        st.divider()
-        col1, col2 = st.columns(2)
-        
-        with col1:
-            st.write("📷 **Camera Identification**")
-            if st.button("🔍 Identify from Camera"):
-                if webrtc_ctx.video_receiver:
-                    try:
-                        frame = webrtc_ctx.video_receiver.get_frame(timeout=3)
-                        if frame:
-                            img = frame.to_ndarray(format="rgb24")
-                            process_identification(img, db_data, all_embeddings)
-                    except Exception as e:
-                        st.error(f"📸 Camera error: {e}")
-                else:
-                    st.warning("⚠️ Camera not ready. Please click 'START' and wait for your face to appear.")
+        # 2. Automatic Identification Logic
+        if webrtc_ctx.video_receiver:
+            # Add a small delay to avoid overwhelming the CPU
+            if "last_scan" not in st.session_state:
+                st.session_state.last_scan = 0
+            
+            current_time = time.time()
+            if current_time - st.session_state.last_scan > 2.0: # Scan every 2 seconds
+                try:
+                    frame = webrtc_ctx.video_receiver.get_frame(timeout=1)
+                    if frame:
+                        img = frame.to_ndarray(format="rgb24")
+                        
+                        # SPEED OPTIMIZATION: Resize image to 25% for AI processing
+                        from PIL import Image
+                        pil_img = Image.fromarray(img)
+                        small_pil = pil_img.resize((img.shape[1]//4, img.shape[0]//4))
+                        import numpy as np
+                        small_img = np.array(small_pil)
+                        
+                        process_identification(small_img, db_data, all_embeddings)
+                        st.session_state.last_scan = current_time
+                except Exception:
+                    pass
 
-        with col2:
-            st.write("📁 **Upload Identification**")
-            uploaded_test = st.file_uploader("Test a photo", type=['jpg', 'png', 'jpeg'], key="test_upload")
-            if uploaded_test:
-                from PIL import Image
-                import numpy as np
-                test_img = np.array(Image.open(uploaded_test).convert('RGB'))
-                process_identification(test_img, db_data, all_embeddings)
+        # 3. Backup Upload
+        st.divider()
+        st.write("📁 **Backup: Upload Photo**")
+        uploaded_test = st.file_uploader("If camera is slow, upload here", type=['jpg', 'png', 'jpeg'], key="test_upload")
+        if uploaded_test:
+            from PIL import Image
+            import numpy as np
+            test_img = np.array(Image.open(uploaded_test).convert('RGB'))
+            process_identification(test_img, db_data, all_embeddings)
 
     with tab2:
         if not is_admin:
