@@ -21,15 +21,30 @@ except ImportError:
     packages_to_install.extend(["pymongo==4.7.3", "dnspython==2.6.1"])
 
 try:
-    import face_recognition
+    import click
 except ImportError:
-    packages_to_install.extend(["face_recognition", "dlib"])
+    packages_to_install.append("Click>=6.0")
+
+try:
+    import face_recognition_models
+except ImportError:
+    packages_to_install.append("face_recognition_models>=0.3.0")
 
 if packages_to_install:
     try:
         subprocess.check_call([sys.executable, "-m", "pip", "install", "-t", deps_dir] + packages_to_install)
     except Exception as e:
         st.error(f"Critical fallback install failed for {packages_to_install}: {e}")
+        st.stop()
+
+try:
+    import face_recognition
+except ImportError:
+    try:
+        # Install face_recognition with --no-deps so it doesn't attempt to compile dlib
+        subprocess.check_call([sys.executable, "-m", "pip", "install", "-t", deps_dir, "--no-deps", "face_recognition"])
+    except Exception as e:
+        st.error(f"Failed to install face_recognition: {e}")
         st.stop()
 
 from pymongo import MongoClient
