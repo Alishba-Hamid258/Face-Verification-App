@@ -1,6 +1,7 @@
 import streamlit as st
 import os
 import sys
+import subprocess
 import time
 import pickle
 import numpy as np
@@ -8,15 +9,34 @@ from datetime import datetime
 from PIL import Image
 import av
 from streamlit_webrtc import webrtc_streamer, WebRtcMode, RTCConfiguration
+import importlib
 
-# Diagnostic check
+# 1. Setup fallback path for missing wrappers
+deps_dir = "/tmp/deps"
+os.makedirs(deps_dir, exist_ok=True)
+if deps_dir not in sys.path:
+    sys.path.insert(0, deps_dir)
+
+# 2. Silent non-blocking install of face_recognition
+# We do this here because putting it in requirements.txt forces the server 
+# to try and compile 'dlib' from source, which causes the infinite hang.
 try:
     import face_recognition
-    from pymongo import MongoClient
-except ImportError as e:
-    st.error(f"🚨 Startup Error: {e}")
-    st.info("The system is performing a one-time setup. Please wait 60 seconds and click 'Reboot App' in the sidebar.")
-    st.stop()
+    import face_recognition_models
+except ImportError:
+    st.warning("Finalizing AI components... Please wait 60 seconds.")
+    try:
+        # --no-deps is CRITICAL. It prevents the server from trying to compile dlib.
+        subprocess.check_call([
+            sys.executable, "-m", "pip", "install", "-q", "--progress-bar", "off", 
+            "-t", deps_dir, "--no-deps", 
+            "face_recognition", "face-recognition-models"
+        ])
+        importlib.invalidate_caches()
+        st.rerun()
+    except Exception as e:
+        st.error(f"Setup failed: {e}")
+        st.stop()
 
 from config import MONGODB_URI, MONGODB_DB_NAME, MONGODB_COLLECTION, CACHE_DURATION
 
@@ -24,6 +44,7 @@ from config import MONGODB_URI, MONGODB_DB_NAME, MONGODB_COLLECTION, CACHE_DURAT
 @st.cache_resource
 def get_database():
     try:
+        from pymongo import MongoClient
         client = MongoClient(MONGODB_URI)
         return client[MONGODB_DB_NAME]
     except Exception as e:
@@ -74,7 +95,7 @@ def main():
         st.header("Admin Access")
         admin_user = st.text_input("Username")
         admin_pass = st.text_input("Password", type="password")
-        is_admin = admin_user == "admin" and admin_pass == "secret123" # Secure this in production
+        is_admin = admin_user == "admin" and admin_pass == "secret123"
 
     # Main Tabs
     tab1, tab2 = st.tabs(["Verification", "Face Database"])
