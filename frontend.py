@@ -46,8 +46,10 @@ from config import MONGODB_URI, MONGODB_DB_NAME, MONGODB_COLLECTION, CACHE_DURAT
 def get_database():
     try:
         from pymongo import MongoClient
+        # Clean the URI to prevent "Port must be integer" errors from hidden spaces/dots
+        clean_uri = MONGODB_URI.strip().split(" ")[0].replace("...", "")
         client = MongoClient(
-            MONGODB_URI, 
+            clean_uri, 
             serverSelectionTimeoutMS=5000,
             tls=True,
             tlsAllowInvalidCertificates=True
