@@ -10,7 +10,10 @@ try:
 except ImportError:
     import sys
     import subprocess
-    subprocess.check_call([sys.executable, "-m", "pip", "install", "pymongo==4.7.3", "dnspython==2.6.1"])
+    try:
+        subprocess.check_call([sys.executable, "-m", "pip", "install", "--user", "pymongo==4.7.3", "dnspython==2.6.1"])
+    except subprocess.CalledProcessError as e:
+        print(f"Failed to install pymongo: {e}")
     from pymongo import MongoClient
 import face_recognition
 from streamlit_webrtc import webrtc_streamer, WebRtcMode, RTCConfiguration
