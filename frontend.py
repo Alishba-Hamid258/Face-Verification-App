@@ -15,17 +15,16 @@ if deps_dir not in sys.path:
 st.set_page_config(page_title="Face Verification", layout="wide")
 st.title("Face Verification System")
 status = st.empty()
-status.info("🔍 Initializing System...")
-print("[DEBUG] App started. Starting system check...")
+print("[DEBUG] App started.")
 
 # 2. Check for AI Engine
 try:
     import face_recognition
     import face_recognition_models
-    print("[DEBUG] AI Engine already loaded.")
+    print("[DEBUG] AI Engine found.")
 except ImportError:
-    print("[DEBUG] AI Engine missing. Starting installation...")
-    status.warning("📦 Installing AI components... (This takes 60 seconds)")
+    status.warning("📦 Installing AI components... (One-time setup, 60 seconds)")
+    print("[DEBUG] AI Engine missing. Installing...")
     try:
         subprocess.check_call([
             sys.executable, "-m", "pip", "install", "-q", "--progress-bar", "off", 
@@ -33,28 +32,15 @@ except ImportError:
             "face_recognition", "face-recognition-models"
         ])
         importlib.invalidate_caches()
-        print("[DEBUG] Installation successful. Rebooting app...")
-        st.success("✅ Setup complete! Reloading...")
+        st.success("✅ AI Engine installed! Reloading...")
         time.sleep(2)
         st.rerun()
     except Exception as e:
         st.error(f"Setup failed: {e}")
-        print(f"[ERROR] Setup failed: {e}")
         st.stop()
 
-# 3. Load other heavy libraries AFTER initialization
-status.info("🔗 Loading libraries...")
-import numpy as np
-import pickle
-import av
-from datetime import datetime
-from PIL import Image
-from streamlit_webrtc import webrtc_streamer, WebRtcMode, RTCConfiguration
+# 3. Lazy Database Connection
 from config import MONGODB_URI, MONGODB_DB_NAME, MONGODB_COLLECTION, CACHE_DURATION
-
-# 4. Database Connection
-status.info("🔗 Connecting to Database...")
-print("[DEBUG] Connecting to MongoDB...")
 
 @st.cache_resource
 def get_database():
@@ -64,38 +50,34 @@ def get_database():
         client.admin.command('ping')
         return client[MONGODB_DB_NAME]
     except Exception as e:
-        st.error(f"Database connection failed: {e}")
-        print(f"[ERROR] Database connection failed: {e}")
+        print(f"[ERROR] DB connection failed: {e}")
         return None
 
-db = get_database()
-if db is None:
-    st.info("Check your MongoDB Atlas IP whitelist (0.0.0.0/0).")
-    st.stop()
-
-status.empty() # Clear the status message
-print("[DEBUG] System ready.")
-
-# --- Logic ---
+# --- Logic with Lazy Imports ---
 @st.cache_data(ttl=CACHE_DURATION)
 def load_embeddings():
+    import pickle
+    db = get_database()
+    if not db: return [], []
     try:
         collection = db[MONGODB_COLLECTION]
         data = list(collection.find({}, {"name": 1, "embedding": 1}))
         names = [d["name"] for d in data]
         embeddings = [pickle.loads(d["embedding"]) for d in data]
         return names, embeddings
-    except Exception as e:
-        st.error(f"Failed to load embeddings: {e}")
+    except Exception:
         return [], []
 
 def get_face_embeddings(image_np):
+    import face_recognition
     face_locations = face_recognition.face_locations(image_np)
     if not face_locations:
         return None
     return face_recognition.face_encodings(image_np, face_locations)[0]
 
 def verify_face(target_embedding, known_embeddings, tolerance=0.6):
+    import face_recognition
+    import numpy as np
     if not known_embeddings:
         return None, 0.0
     distances = face_recognition.face_distance(known_embeddings, target_embedding)
@@ -123,6 +105,14 @@ def main():
         if not names:
             st.warning("Database is empty. Please add faces in the Database tab.")
         
+        # Heavy imports for WebRTC
+        try:
+            from streamlit_webrtc import webrtc_streamer, WebRtcMode, RTCConfiguration
+            import av
+        except ImportError:
+            st.error("Missing video components. Please check requirements.txt")
+            st.stop()
+
         rtc_config = RTCConfiguration({"iceServers": [{"urls": ["stun:stun.l.google.com:19302"]}]})
         
         webrtc_ctx = webrtc_streamer(
@@ -155,6 +145,10 @@ def main():
             st.info("Please login as admin to manage faces")
         else:
             st.subheader("Manage Known Faces")
+            db = get_database()
+            if not db:
+                st.error("Database connection failed. Check MongoDB IP whitelist.")
+                st.stop()
             collection = db[MONGODB_COLLECTION]
             
             # Add New Face
@@ -164,6 +158,11 @@ def main():
                 
                 if st.button("Add to Database"):
                     if new_name and uploaded_file:
+                        from PIL import Image
+                        import numpy as np
+                        import pickle
+                        from datetime import datetime
+                        
                         image = Image.open(uploaded_file).convert('RGB')
                         img_np = np.array(image)
                         emb = get_face_embeddings(img_np)
