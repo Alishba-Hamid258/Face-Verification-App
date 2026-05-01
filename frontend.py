@@ -90,10 +90,28 @@ def verify_face(target_embedding, known_embeddings, tolerance=0.6):
 def main():
     # Sidebar Admin Login
     with st.sidebar:
-        st.header("Admin Access")
+        st.header("🔐 Admin Access")
         admin_user = st.text_input("Username")
         admin_pass = st.text_input("Password", type="password")
-        is_admin = admin_user == "admin" and admin_pass == "secret123"
+        login_btn = st.button("Login")
+        
+        is_admin = False
+        if login_btn:
+            if admin_user == "admin" and admin_pass == "secret123":
+                st.success("Logged in!")
+                is_admin = True
+                st.session_state["is_admin"] = True
+            else:
+                st.error("Invalid credentials")
+                st.session_state["is_admin"] = False
+        
+        # Persist login state
+        if st.session_state.get("is_admin"):
+            is_admin = True
+            st.info("Status: Admin Mode Active")
+            if st.button("Logout"):
+                st.session_state["is_admin"] = False
+                st.rerun()
 
     # Main Tabs
     tab1, tab2 = st.tabs(["Verification", "Face Database"])
