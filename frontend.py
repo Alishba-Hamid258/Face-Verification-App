@@ -21,55 +21,60 @@ os.makedirs(deps_dir, exist_ok=True)
 if deps_dir not in sys.path:
     sys.path.insert(0, deps_dir)
 
+import importlib
+
 # 3. Check and install missing packages dynamically
 def install_fallback_dependencies():
+    importlib.invalidate_caches()
     packages_to_install = []
     
-    try:
-        import pymongo
-    except ImportError:
+    # Helper to check if a package is truly missing
+    def is_missing(name):
+        try:
+            importlib.import_module(name)
+            return False
+        except ImportError:
+            return True
+
+    if is_missing("pymongo"):
         packages_to_install.extend(["pymongo==4.7.3", "dnspython==2.6.1"])
 
-    try:
-        import dlib
-    except ImportError:
+    if is_missing("dlib"):
         packages_to_install.append("dlib-bin==19.24.6")
 
-    try:
-        import face_recognition_models
-    except ImportError:
+    if is_missing("face_recognition_models"):
         packages_to_install.append("face_recognition_models>=0.3.0")
         
-    try:
-        import click
-    except ImportError:
+    if is_missing("click"):
         packages_to_install.append("Click>=6.0")
 
     if packages_to_install:
-        st.warning(f"Installing missing core dependencies: {', '.join(packages_to_install)}. Please wait...")
+        st.warning(f"Setting up environment: {', '.join(packages_to_install)}... (This happens only once)")
         try:
-            subprocess.check_call([sys.executable, "-m", "pip", "install", "-q", "--progress-bar", "off", "-t", deps_dir] + packages_to_install)
+            # Added --upgrade to fix potential corrupted partial installs
+            subprocess.check_call([sys.executable, "-m", "pip", "install", "-q", "--progress-bar", "off", "--upgrade", "-t", deps_dir] + packages_to_install)
+            importlib.invalidate_caches()
         except Exception as e:
-            st.error(f"Failed to install dependencies: {e}")
+            st.error(f"Setup failed: {e}")
             st.stop()
 
-    try:
-        import face_recognition
-    except ImportError:
-        st.warning("Installing face_recognition wrapper...")
+    if is_missing("face_recognition"):
+        st.warning("Finalizing face verification engine...")
         try:
             subprocess.check_call([sys.executable, "-m", "pip", "install", "-q", "--progress-bar", "off", "-t", deps_dir, "--no-deps", "face_recognition"])
+            importlib.invalidate_caches()
         except Exception as e:
-            st.error(f"Failed to install face_recognition: {e}")
+            st.error(f"Engine setup failed: {e}")
             st.stop()
 
 install_fallback_dependencies()
 
 try:
+    importlib.invalidate_caches()
     from pymongo import MongoClient
     import face_recognition
 except Exception as e:
-    st.error(f"Final import check failed: {e}")
+    st.error(f"Final startup check failed: {e}. Please try clicking 'Reboot App' in the sidebar menu.")
     st.stop()
 
 import numpy as np
