@@ -63,22 +63,29 @@ def load_embeddings():
         return []
 
 def get_face_embeddings(image_np):
-    import face_recognition
-    face_locations = face_recognition.face_locations(image_np)
-    if not face_locations:
+    try:
+        import face_recognition
+        face_locations = face_recognition.face_locations(image_np)
+        if not face_locations:
+            return None
+        return face_recognition.face_encodings(image_np, face_locations)[0]
+    except ImportError:
+        st.error("🤖 AI Engine is still loading in the background. Please wait 1-2 minutes...")
         return None
-    return face_recognition.face_encodings(image_np, face_locations)[0]
 
 def verify_face(target_embedding, known_embeddings, tolerance=0.7):
-    import face_recognition
-    import numpy as np
-    if not known_embeddings:
-        return None, 0.0
-    distances = face_recognition.face_distance(known_embeddings, target_embedding)
-    min_distance_idx = np.argmin(distances)
-    if distances[min_distance_idx] <= tolerance:
-        return min_distance_idx, distances[min_distance_idx]
-    return None, distances[min_distance_idx]
+    try:
+        import face_recognition
+        import numpy as np
+        if not known_embeddings:
+            return None, 0.0
+        distances = face_recognition.face_distance(known_embeddings, target_embedding)
+        min_distance_idx = np.argmin(distances)
+        if distances[min_distance_idx] <= tolerance:
+            return min_distance_idx, distances[min_distance_idx]
+        return None, distances[min_distance_idx]
+    except ImportError:
+        return None, 1.0
 
 def process_identification(img, db_data, all_embeddings):
     status_area = st.empty()
