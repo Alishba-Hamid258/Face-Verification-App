@@ -26,8 +26,13 @@ def get_database():
         )
         client.admin.command('ping')
         return client[MONGODB_DB_NAME]
+    except ImportError as e:
+        st.error(f"❌ Missing Library: {e}. Please ensure 'pymongo' is in requirements.txt.")
+        print(f"[ERROR] pymongo not found: {e}")
+        return None
     except Exception as e:
         st.error(f"⚠️ Connection Error: {e}")
+        st.info("💡 Tip: If you're on Streamlit Cloud, check your Secrets for MONGODB_URI.")
         print(f"[ERROR] DB connection failed: {e}")
         return None
 
@@ -160,8 +165,9 @@ def main():
         try:
             from streamlit_webrtc import webrtc_streamer, WebRtcMode, RTCConfiguration
             import av
-        except ImportError:
-            st.error("Missing video components. Please check requirements.txt")
+        except ImportError as e:
+            st.error(f"🎥 Missing video components: {e}")
+            st.info("Please ensure 'streamlit-webrtc' and 'av' are in requirements.txt and that the app has rebooted.")
             st.stop()
 
         rtc_config = RTCConfiguration({"iceServers": [{"urls": ["stun:stun.l.google.com:19302"]}]})

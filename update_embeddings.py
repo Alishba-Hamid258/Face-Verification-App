@@ -6,8 +6,8 @@ from pymongo import MongoClient
 from datetime import datetime
 from config import MONGODB_URI, MONGODB_DB_NAME, MONGODB_COLLECTION
 
-# Absolute path to dataset
-dataset_path = r"C:\Users\USER\Projects\FaceVerificationAppPoliticians\dataset"
+# Dataset path (relative to project root)
+dataset_path = os.path.join(os.getcwd(), "dataset")
 
 # Name mapping to match folder names with MongoDB names and details
 name_mapping = {

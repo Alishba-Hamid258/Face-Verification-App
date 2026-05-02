@@ -5,5 +5,7 @@ dnspython
 python-dotenv
 numpy
 Pillow
-dlib-bin==19.24.6
+av
+opencv-python-headless
+dlib
 face_recognition
