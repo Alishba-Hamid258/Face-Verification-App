@@ -1,8 +1,26 @@
-__pycache__/ 
-*.pyc 
-.env 
-data/ 
-dataset/ 
-test/ 
-venv/ 
-!sample_data/ 
+# Byte-compiled / optimized / DLL files
+__pycache__/
+*.py[cod]
+*$py.class
+
+# Virtual Environment
+venv/
+.env
+env/
+ENV/
+
+# IDE files
+.vscode/
+.idea/
+
+# Database files (if local)
+*.db
+*.sqlite
+
+# Data/Embeddings (Optional: if they are large or private)
+# embeddings.pkl
+# dataset/
+
+# System files
+.DS_Store
+Thumbs.db

@@ -126,6 +126,11 @@ def add_politician(
         }},
         upsert=True
     )
+    global cached_encodings, cached_names, last_cache_update
+    cached_encodings = None
+    cached_names = None
+    last_cache_update = 0
+    
     return {"status": "success", "message": f"Added {name} with {len(encodings)} images."}
 
 @app.post("/edit-politician")
@@ -179,6 +184,11 @@ def edit_politician(
     )
     if result.matched_count == 0:
         raise HTTPException(status_code=404, detail="Politician not found.")
+    global cached_encodings, cached_names, last_cache_update
+    cached_encodings = None
+    cached_names = None
+    last_cache_update = 0
+    
     return {"status": "success", "message": f"Edited {old_name} to {new_name}."}
 
 @app.post("/verify-image")
@@ -194,11 +204,19 @@ def verify_image(file: UploadFile = File(...)):
         known_encodings, known_names = load_embeddings()
         print(f"Loaded {len(known_encodings)} embeddings")
 
-        face_locations = face_recognition.face_locations(rgb_image, model="hog")
+        # Speed Optimization: Resize image to 1/4 size for faster face detection
+        small_frame = cv2.resize(rgb_image, (0, 0), fx=0.25, fy=0.25)
+        
+        # Find faces in the small frame
+        face_locations = face_recognition.face_locations(small_frame, model="hog")
         if not face_locations:
-            face_locations = face_recognition.face_locations(rgb_image, model="cnn")
+            face_locations = face_recognition.face_locations(small_frame, model="cnn")
+        
         if not face_locations:
             raise HTTPException(status_code=400, detail="No face detected")
+
+        # Scale face locations back up to original size
+        face_locations = [(top*4, right*4, bottom*4, left*4) for (top, right, bottom, left) in face_locations]
 
         face_encodings = face_recognition.face_encodings(rgb_image, face_locations)
         if not face_encodings:
@@ -229,12 +247,20 @@ def verify_image(file: UploadFile = File(...)):
 
 @app.get("/politicians")
 async def get_politicians():
-    known_encodings, known_names = load_embeddings()
-    return {"politicians": known_names}
+    # Always fetch directly from DB to ensure instant updates
+    names = [doc['name'] for doc in collection.find({}, {'name': 1})]
+    return {"politicians": names}
 
 @app.post("/delete-politician")
 def delete_politician(name: str = Form(...), username: str = Depends(verify_credentials)):
     result = collection.delete_one({'name': name})
+    
+    # Force cache refresh
+    global cached_encodings, cached_names, last_cache_update
+    cached_encodings = None
+    cached_names = None
+    last_cache_update = 0
+    
     if result.deleted_count == 0:
         raise HTTPException(status_code=404, detail="Politician not found.")
     return {"status": "success", "message": f"Deleted {name}."}
