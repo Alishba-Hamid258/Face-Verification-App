@@ -1,111 +1,62 @@
-**FaceVerificationAppPoliticians**
+# 🏛️ Politician Face Verification System
 
----
+A professional, real-time face identification application designed to verify politicians using a high-accuracy AI engine. Built with **FastAPI**, **Streamlit**, and **MongoDB**.
 
-A face verification system for politicians using FastAPI, Streamlit, and MongoDB.
+## 🚀 Features
 
+- **Real-Time Verification**: Smooth, zero-lag camera feed using background processing threads.
+- **Manual Image Analysis**: Upload any photo to check for matches against the database.
+- **Database Management**: Full Admin Panel to Add, Edit, and Delete politician records.
+- **High Accuracy**: Optimized face recognition using `dlib` and 4x downsampling for speed.
+- **Secure Access**: Protected Admin controls via authentication.
 
-***Setup***
+## 🛠️ Tech Stack
 
+- **Frontend**: [Streamlit](https://streamlit.io/) (Python-based interactive UI)
+- **Backend**: [FastAPI](https://fastapi.tiangolo.com/) (High-performance Python API)
+- **AI Engine**: [Face Recognition](https://github.com/ageitgey/face_recognition) (dlib-based)
+- **Database**: [MongoDB](https://www.mongodb.com/) (NoSQL storage for encodings and metadata)
+- **Computer Vision**: [OpenCV](https://opencv.org/)
 
+## 📋 Prerequisites
 
-Install Python 3.8+ and MongoDB Community Edition.
+- Python 3.10+
+- MongoDB installed and running locally
+- Webcam (for live verification)
 
-Install MongoDB Database Tools for mongoexport/mongoimport.
+## 🔧 Installation & Setup
 
+1. **Clone the Repository**:
+   ```bash
+   git clone https://github.com/Alishba-Hamid258/Face-Verification-App.git
+   cd Face-Verification-App
+   ```
 
-***Create and activate a virtual environment:***
-python -m venv venv
+2. **Set up Virtual Environment**:
+   ```bash
+   python -m venv venv
+   source venv/bin/activate  # On Windows: venv\Scripts\activate
+   pip install -r requirements.txt
+   ```
 
-venv\\Scripts\\activate
+3. **Configure Environment**:
+   Create a `.env` file or update `config.py` with your MongoDB URI.
 
+4. **Run the Backend**:
+   ```bash
+   python api.py
+   ```
 
+5. **Run the Frontend**:
+   ```bash
+   streamlit run frontend.py
+   ```
 
+## 🔐 Admin Credentials
 
+- **Username**: `admin`
+- **Password**: `secret123`
 
-***Install dependencies:***
-pip install -r requirements.txt
+## 🤝 Contributing
 
-pip install streamlit
-
-
-
-
-
-Set up .env based on .env.example.
-
-
-***Start MongoDB:***
-mongod
-
-
-
-
-
-***Populate the database:***
-python update\_embeddings.py
-
-
-
-Requires a dataset folder with politician subfolders containing .jpg images.
-
-
-***(Optional) Import sample data:***
-mongoimport --db face\_verification\_db --collection politicians --file sample\_data/politicians.json
-
-
-
-
-
-***Run backend:***
-python api.py
-
-
-
-
-
-***Run frontend:***
-streamlit run frontend.py
-
-
-
-
-
-
-
-**Files**
-
-
-
-*api.py*: FastAPI backend with MongoDB connection management.
-
-*frontend.py*: Streamlit frontend for GUI interaction.
-
-*config.py*: Configuration settings.
-
-*requirements.txt*: Backend dependencies.
-
-*update\_embeddings.py*: Populates MongoDB with face embeddings.
-
-*verify\_faces.py*: Standalone webcam verification script.
-
-*test\_camera\_stability.py*: Camera testing script.
-
-*.env.example*: Template for environment variables.
-
-*sample\_data/politicians.json*: Sample MongoDB data.
-
-
-
-**Notes**
-
-
-
-MongoDB connections are opened on demand and closed when not in use.
-
-The dataset and test folders are excluded from Git due to potential sensitivity/size.
-
-Ensure a webcam is available for real-time verification.
-
-
-
+Contributions are welcome! Please feel free to submit a Pull Request.
