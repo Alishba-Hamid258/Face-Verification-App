@@ -2,6 +2,28 @@
 
 A professional, real-time face identification application designed to verify politicians using a high-accuracy AI engine. Built with **FastAPI**, **Streamlit**, and **MongoDB**.
 
+---
+
+## 📸 Application Screenshots
+
+### 🔍 Real-Time Face Verification & Photo Upload
+Identify politicians in real time through the live webcam feed or by uploading an image for instant matching.
+![Face Verification Dashboard](assets/face_verification.jpg)
+
+### 🔐 Admin Authentication Panel
+Secure administrator login to access database management and system controls.
+![Admin Login](assets/admin_login.jpg)
+
+### ➕ Add New Politician Profile
+Easily register new politicians with details (Name, Description, Party) and upload training photos.
+![Add Politician Profile](assets/admin_add_person.jpg)
+
+### ✏️ Manage & Delete Politician Records
+Update existing politician profiles or permanently remove records from the database.
+![Manage Politician Records](assets/admin_manage_person.jpg)
+
+---
+
 ## 🚀 Features
 
 - **Real-Time Verification**: Smooth, zero-lag camera feed using background processing threads.
